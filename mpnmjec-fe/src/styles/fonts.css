@@ -1,0 +1,19 @@
+
+@import url('https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@400;700&display=swap');
+
+/* Apply the formal font to the whole document */
+body {
+    font-family: 'Roboto Slab', serif;
+    font-weight: 400;
+    color: #222;
+    background-color: #fff;
+}
+
+/* Headings with bold weight for formality */
+h1, h2, h3, h4, h5, h6 {
+    font-family: 'Roboto Slab', serif;
+    font-weight: 700;
+    margin-top: 1.2em;
+    margin-bottom: 0.5em;
+    color: #1a1a1a;
+}
