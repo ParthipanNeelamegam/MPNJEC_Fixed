@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import {
   fetchStudentDashboardSummary,
-  fetchStudentNotifications,
   fetchStudentPerformance,
   requestBonafideCertificate
 } from '../../services/studentDashboardService';

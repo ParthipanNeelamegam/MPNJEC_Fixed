@@ -1,4 +1,4 @@
-import { Home, User, BookOpen, Calendar, FileText, Menu } from 'lucide-react';
+import { Home } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 interface NavItem {
