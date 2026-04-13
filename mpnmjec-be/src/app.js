@@ -19,6 +19,10 @@ import libraryRoutes from "./routes/library.routes.js";
 
 const app = express();
 
+// Trust proxy — required for Render.com / cloud deployments
+// Fixes: ERR_ERL_UNEXPECTED_X_FORWARDED_FOR from express-rate-limit
+app.set('trust proxy', 1);
+
 // Rate limiting — protect login from brute force
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
