@@ -47,6 +47,14 @@ export interface StudentUpdateData {
   department?: string;
   year?: number;
   section?: string;
+  fatherName?: string;
+  motherName?: string;
+  dob?: string;
+  aadhaar?: string;
+  mobile?: string;
+  parentMobile?: string;
+  address?: string;
+  admissionYear?: number;
   cgpa?: number;
   attendance?: number;
   status?: 'active' | 'inactive';
@@ -287,9 +295,13 @@ export interface FeeData {
   studentId: string;
   academicYear: string;
   semester: number;
-  feeStructure?: { name: string; amount: number }[];
+  feeStructure?: { name: string; category?: string; amount: number }[];
   totalAmount: number;
   dueDate: string;
+  finePerDay?: number;
+  applyToAll?: boolean;
+  department?: string;
+  year?: number;
 }
 
 export const createFeeRecord = async (data: FeeData) => {

@@ -7,6 +7,213 @@ import Certificate from "../models/Certificate.js";
 import Material from "../models/Material.js";
 import LeaveRequest from "../models/LeaveRequest.js";
 import Course from "../models/Course.js";
+import Notification from "../models/Notification.js";
+import mongoose from "mongoose";
+
+const INSTITUTION_NAME = process.env.INSTITUTION_NAME || "MPNMJEC";
+const INSTITUTION_PLACE = process.env.INSTITUTION_PLACE || "Campus";
+const UPI_ID = process.env.COLLEGE_UPI_ID || "college@upi";
+const UPI_PAYEE_NAME = process.env.COLLEGE_UPI_NAME || INSTITUTION_NAME;
+
+const formatCurrency = (amount = 0) => `Rs.${Number(amount || 0).toLocaleString("en-IN")}`;
+const formatDate = (date) => date ? new Date(date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "N/A";
+const formatCertificateDate = (date) => date ? new Date(date).toLocaleDateString("en-IN") : "N/A";
+
+const getParentName = (student) => student?.fatherName || student?.motherName || "Parent/Guardian";
+const getStudentCourseText = (student) => `${student?.department?.toUpperCase() || "Department"}, Year ${student?.year || "-"} / Semester ${student?.semester || "-"}`;
+const escapePdfText = (value = "") => String(value).replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+const sanitizeFileName = (value = "certificate") => String(value).replace(/[^a-z0-9_-]+/gi, "_").replace(/^_+|_+$/g, "");
+
+const wrapText = (text, maxChars = 92) => {
+  const lines = [];
+  String(text || "").split("\n").forEach((paragraph) => {
+    const words = paragraph.trim().split(/\s+/).filter(Boolean);
+    if (words.length === 0) {
+      lines.push("");
+      return;
+    }
+
+    let line = "";
+    words.forEach((word) => {
+      const next = line ? `${line} ${word}` : word;
+      if (next.length > maxChars) {
+        lines.push(line);
+        line = word;
+      } else {
+        line = next;
+      }
+    });
+    if (line) lines.push(line);
+  });
+  return lines;
+};
+
+const buildCertificateContent = ({ certificate, student }) => {
+  const studentName = student?.userId?.name || "Student";
+  const parentName = getParentName(student);
+  const courseText = getStudentCourseText(student);
+  const academicYear = certificate.academicYear || `${new Date().getFullYear()} - ${new Date().getFullYear() + 1}`;
+  const admissionText = student?.admissionYear ? `the academic year ${student.admissionYear}` : "the date of admission";
+  const dateText = formatCertificateDate(new Date());
+
+  const title = certificate.type === "bonafide" ? "BONAFIDE CERTIFICATE" : String(certificate.typeName || "CERTIFICATE").toUpperCase();
+  const body = certificate.type === "bonafide"
+    ? [
+      `This is to certify that Mr./Ms. ${studentName}, Son/Daughter of ${parentName}, is a bonafide student of ${INSTITUTION_NAME}, studying in ${courseText} during the academic year ${academicYear}.`,
+      "",
+      `He/She has been studying in this institution from ${admissionText} to till date. His/Her conduct and behavior are found to be satisfactory.`,
+      "",
+      `This certificate is issued on his/her request for the purpose of ${certificate.purpose || "General purpose"}.`,
+    ]
+    : [
+      `This is to certify that Mr./Ms. ${studentName}, Son/Daughter of ${parentName}, is a student of ${INSTITUTION_NAME}, studying in ${courseText}.`,
+      "",
+      `This ${certificate.typeName || "certificate"} is issued on his/her request for the purpose of ${certificate.purpose || "General purpose"}.`,
+    ];
+
+  return { title, body, dateText };
+};
+
+const createCertificatePdfBuffer = ({ certificate, student }) => {
+  const { title, body, dateText } = buildCertificateContent({ certificate, student });
+  const commands = [];
+  let y = 760;
+
+  commands.push("BT");
+  commands.push("/F1 18 Tf");
+  commands.push("1 0 0 1 170 780 Tm");
+  commands.push(`(${escapePdfText(title)}) Tj`);
+  commands.push("ET");
+
+  commands.push("BT");
+  commands.push("/F1 12 Tf");
+  commands.push("14 TL");
+  commands.push("1 0 0 1 72 720 Tm");
+  commands.push(`(Certificate No: ${escapePdfText(certificate.certificateNumber || certificate._id)}) Tj`);
+  commands.push("T*");
+  commands.push(`(Roll No: ${escapePdfText(student?.rollNumber || "-")}) Tj`);
+  commands.push("ET");
+
+  y = 660;
+  commands.push("BT");
+  commands.push("/F1 13 Tf");
+  commands.push("18 TL");
+  commands.push(`1 0 0 1 72 ${y} Tm`);
+  body.forEach((paragraph, paragraphIndex) => {
+    const lines = wrapText(paragraph, 82);
+    if (paragraphIndex > 0) commands.push("T*");
+    lines.forEach((line) => {
+      if (line) commands.push(`(${escapePdfText(line)}) Tj`);
+      commands.push("T*");
+    });
+  });
+  commands.push("ET");
+
+  commands.push("BT");
+  commands.push("/F1 12 Tf");
+  commands.push("16 TL");
+  commands.push("1 0 0 1 72 270 Tm");
+  commands.push(`(Date: ${escapePdfText(dateText)}) Tj`);
+  commands.push("T*");
+  commands.push(`(Place: ${escapePdfText(INSTITUTION_PLACE)}) Tj`);
+  commands.push("ET");
+
+  commands.push("BT");
+  commands.push("/F1 12 Tf");
+  commands.push("18 TL");
+  commands.push("1 0 0 1 340 210 Tm");
+  commands.push("(Principal / Head of Institution) Tj");
+  commands.push("T*");
+  commands.push("(Signature: ____________) Tj");
+  commands.push("T*");
+  commands.push("(Name: ____________) Tj");
+  commands.push("T*");
+  commands.push("T*");
+  commands.push("(Seal of Institution) Tj");
+  commands.push("ET");
+
+  commands.push("0.8 w");
+  commands.push("50 50 495 742 re");
+  commands.push("S");
+
+  const stream = commands.join("\n");
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman >>",
+    `<< /Length ${Buffer.byteLength(stream, "utf8")} >>\nstream\n${stream}\nendstream`,
+  ];
+
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(Buffer.byteLength(pdf, "utf8"));
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+
+  const xrefOffset = Buffer.byteLength(pdf, "utf8");
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  offsets.slice(1).forEach((offset) => {
+    pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  });
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+
+  return Buffer.from(pdf, "utf8");
+};
+
+const renderCertificateHtml = ({ certificate, student }) => {
+  const studentName = student?.userId?.name || "Student";
+  const parentName = getParentName(student);
+  const courseText = getStudentCourseText(student);
+  const academicYear = certificate.academicYear || `${new Date().getFullYear()} - ${new Date().getFullYear() + 1}`;
+  const admissionText = student?.admissionYear ? `the academic year ${student.admissionYear}` : "the date of admission";
+  const dateText = formatCertificateDate(new Date());
+
+  const body = certificate.type === "bonafide"
+    ? `This is to certify that Mr./Ms. ${studentName}, Son/Daughter of ${parentName}, is a bonafide student of ${INSTITUTION_NAME}, studying in ${courseText} during the academic year ${academicYear}.
+
+He/She has been studying in this institution from ${admissionText} to till date. His/Her conduct and behavior are found to be satisfactory.
+
+This certificate is issued on his/her request for the purpose of ${certificate.purpose}.`
+    : `This is to certify that Mr./Ms. ${studentName}, Son/Daughter of ${parentName}, is a student of ${INSTITUTION_NAME}, studying in ${courseText}. This ${certificate.typeName} is issued on his/her request for the purpose of ${certificate.purpose}.`;
+
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>${certificate.typeName}</title>
+  <style>
+    body { font-family: Georgia, "Times New Roman", serif; color: #111827; padding: 48px; }
+    .certificate { max-width: 760px; margin: 0 auto; border: 2px solid #111827; padding: 44px; min-height: 900px; }
+    h1 { text-align: center; font-size: 24px; text-decoration: underline; margin-bottom: 46px; }
+    p { font-size: 18px; line-height: 1.9; white-space: pre-line; text-align: justify; }
+    .meta { margin-top: 48px; font-size: 17px; line-height: 1.8; }
+    .sign { margin-top: 84px; display: flex; justify-content: flex-end; }
+    .sign div { width: 280px; font-size: 17px; line-height: 1.8; }
+    @media print { body { padding: 0; } .certificate { border: 2px solid #111827; } }
+  </style>
+</head>
+<body>
+  <div class="certificate">
+    <h1>${certificate.typeName.toUpperCase()}</h1>
+    <p>${body}</p>
+    <div class="meta">
+      <div>Date: ${dateText}</div>
+      <div>Place: ${INSTITUTION_PLACE}</div>
+    </div>
+    <div class="sign">
+      <div>
+        <strong>Principal / Head of Institution</strong><br />
+        Signature: ____________<br />
+        Name: ____________<br />
+        Seal of Institution
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
+};
 
 // GET /api/student/profile
 export const getStudentProfile = async (req, res) => {
@@ -158,11 +365,24 @@ export const getStudentFeesSummary = async (req, res) => {
         _id: fee._id,
         totalAmount: fee.totalAmount,
         paidAmount: fee.paidAmount,
+        fineAmount: fee.fineAmount || 0,
+        finePerDay: fee.finePerDay || 0,
         pendingAmount: fee.pendingAmount,
         status: fee.status,
         dueDate: fee.dueDate,
         academicYear: fee.academicYear,
         semester: fee.semester,
+        feeStructure: fee.feeStructure || [],
+        dueAlert: fee.status === "overdue"
+          ? `Due date is over. Fine added: ${formatCurrency(fee.fineAmount || 0)}`
+          : null,
+        upi: {
+          id: UPI_ID,
+          name: UPI_PAYEE_NAME,
+          amount: fee.pendingAmount,
+          purpose: `Semester ${fee.semester} fee`,
+          url: `upi://pay?pa=${encodeURIComponent(UPI_ID)}&pn=${encodeURIComponent(UPI_PAYEE_NAME)}&am=${encodeURIComponent(fee.pendingAmount)}&cu=INR&tn=${encodeURIComponent(`Fee payment ${student.rollNumber}`)}`,
+        },
       }
     });
   } catch(e) {
@@ -181,6 +401,7 @@ export const getStudentFeesHistory = async (req, res) => {
     const payments = fees.flatMap(f => 
       (f.payments || []).map(p => ({
         ...p.toObject(),
+        purpose: p.purpose || f.feeStructure?.map(item => item.name).join(", ") || `Semester ${f.semester} Fee`,
         academicYear: f.academicYear,
         semester: f.semester,
       }))
@@ -231,6 +452,7 @@ export const getFeeReceipt = async (req, res) => {
         date: payment.date ? new Date(payment.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A',
         amountPaid: payment.amount || 0,
         paymentMethod: payment.method || 'N/A',
+        purpose: payment.purpose || fee.feeStructure?.map(item => item.name).join(", ") || `Semester ${fee.semester} Fee`,
         receiptNumber: payment.receiptNumber || 'N/A',
         transactionId: payment.transactionId || 'N/A',
         status: 'Success',
@@ -245,19 +467,30 @@ export const getFeeReceipt = async (req, res) => {
 export const payStudentFees = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { amount } = req.body;
+    const { amount, transactionId, purpose } = req.body;
     const student = await Student.findOne({ userId });
     if (!student) return res.status(404).json({ error: 'Student profile not found' });
 
     const fee = await Fee.findOne({ studentId: student._id });
     if (!fee) return res.status(404).json({ error: 'No fee record found' });
 
+    const paymentAmount = Number(amount || fee.pendingAmount || 0);
+    if (!paymentAmount || paymentAmount <= 0) return res.status(400).json({ error: "Valid amount is required" });
+    if (paymentAmount > fee.pendingAmount) return res.status(400).json({ error: "Payment amount exceeds pending amount" });
+
     const receiptNumber = `RCP-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-    fee.payments.push({ amount, method: 'Online', receiptNumber, date: new Date() });
-    fee.paidAmount += amount;
+    fee.payments.push({
+      amount: paymentAmount,
+      method: 'upi',
+      transactionId,
+      receiptNumber,
+      date: new Date(),
+      purpose: purpose || fee.feeStructure?.map(item => item.name).join(", ") || `Semester ${fee.semester} Fee`,
+    });
+    fee.paidAmount += paymentAmount;
     await fee.save();
 
-    res.json({ success: true, receipt: { receiptNumber, amount } });
+    res.json({ success: true, receipt: { receiptNumber, amount: paymentAmount, transactionId } });
   } catch(e) {
     res.status(500).json({ error: 'Failed to process payment' });
   }
@@ -500,6 +733,15 @@ export const applyCertificate = async (req, res) => {
       fee: certType.fee * copies,
     });
 
+    await Notification.create({
+      userId,
+      title: "Certificate Request Submitted",
+      message: `${certType.name} request submitted for ${purpose.trim()}.`,
+      type: "certificate",
+      priority: "normal",
+      link: "/student/certificates",
+    });
+
     res.status(201).json({
       success: true,
       message: "Certificate application submitted successfully",
@@ -516,6 +758,16 @@ export const applyCertificate = async (req, res) => {
   } catch(error) {
     res.status(500).json({ error: error.message || "Failed to apply for certificate" });
   }
+};
+
+// POST /api/student/certificates/request - Quick bonafide request from dashboard
+export const requestBonafideCertificate = async (req, res) => {
+  req.body = {
+    type: "bonafide",
+    purpose: req.body?.purpose || "General purpose",
+    copies: req.body?.copies || 1,
+  };
+  return applyCertificate(req, res);
 };
 
 // POST /api/student/certificates/:id/pay
@@ -536,5 +788,43 @@ export const payCertificateFee = async (req, res) => {
     res.json({ success: true, message: "Payment successful", certificate: { _id: certificate._id, isPaid: true } });
   } catch(e) {
     res.status(500).json({ error: "Failed to process payment" });
+  }
+};
+
+// GET /api/student/certificates/:certificateNumber/download
+export const downloadCertificate = async (req, res) => {
+  try {
+    const { certificateNumber } = req.params;
+    const lookup = [{ certificateNumber }];
+    if (mongoose.Types.ObjectId.isValid(certificateNumber)) {
+      lookup.push({ _id: certificateNumber });
+    }
+
+    const certificate = await Certificate.findOne({
+      $or: lookup,
+      status: { $in: ["approved", "processing", "ready", "collected"] },
+    }).populate({
+      path: "studentId",
+      populate: { path: "userId", select: "name email" },
+    });
+
+    if (!certificate) return res.status(404).send("Certificate not found or not approved");
+
+    if (!certificate.certificateNumber) {
+      const year = new Date().getFullYear();
+      const random = Math.floor(100000 + Math.random() * 900000);
+      certificate.certificateNumber = `CERT-${year}-${random}`;
+      await certificate.save();
+    }
+
+    const pdf = createCertificatePdfBuffer({ certificate, student: certificate.studentId });
+    const fileName = sanitizeFileName(`${certificate.typeName}_${certificate.certificateNumber}`) || "certificate";
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${fileName}.pdf"`);
+    res.setHeader("Content-Length", pdf.length);
+    res.send(pdf);
+  } catch(e) {
+    res.status(500).send("Failed to download certificate");
   }
 };

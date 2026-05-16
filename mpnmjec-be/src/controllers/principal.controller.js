@@ -10,6 +10,7 @@ import Achievement from "../models/Achievement.js";
 import Report from "../models/Report.js";
 import Marks from "../models/Marks.js";
 import Department from "../models/Department.js";
+import Notification from "../models/Notification.js";
 
 // ========================
 // DASHBOARD
@@ -275,13 +276,29 @@ export const updateApproval = async (req, res) => {
         await item.save();
       }
     } else if (type === "certificate") {
-      item = await Certificate.findById(id);
+      item = await Certificate.findById(id).populate("studentId", "userId");
       if (item) {
         item.status = status;
         item.reviewedBy = req.user.id;
         item.reviewedAt = new Date();
         if (remarks) item.remarks = remarks;
         await item.save();
+
+        if (item.studentId?.userId) {
+          await Notification.create({
+            userId: item.studentId.userId,
+            title: `Certificate request ${status}`,
+            message: `Your ${item.typeName} request has been ${status}.`,
+            type: "certificate",
+            priority: status === "approved" ? "normal" : "high",
+            link: "/student/certificates",
+            metadata: {
+              certificateId: item._id,
+              certificateType: item.type,
+              status,
+            },
+          });
+        }
       }
     }
 

@@ -12,6 +12,9 @@ interface ReceiptData {
   date: string;
   amountPaid: number;
   paymentMethod?: string;
+  purpose?: string;
+  transactionId?: string;
+  receiptNumber?: string;
   status?: string;
 }
 
@@ -58,7 +61,7 @@ export default function StudentReceipt() {
       <Card className="max-w-4xl mx-auto p-8 bg-white">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Payment Receipt</h1>
-          <p className="text-gray-600">Receipt No: {id}</p>
+          <p className="text-gray-600">Receipt No: {receipt.receiptNumber || id}</p>
         </div>
 
         <div className="border-t-4 border-blue-600 pt-6 mb-6">
@@ -79,6 +82,32 @@ export default function StudentReceipt() {
               <p className="text-sm text-gray-600">Amount Paid</p>
               <p className="font-bold text-green-600 text-xl">₹{receipt.amountPaid.toLocaleString()}</p>
             </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-6 mb-8">
+          <div>
+            <p className="text-sm text-gray-600">Payment Mode</p>
+            <p className="font-bold text-gray-900">{receipt.paymentMethod || 'N/A'}</p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-600">Purpose</p>
+            <p className="font-bold text-gray-900">{receipt.purpose || 'Fee payment'}</p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-600">Transaction ID</p>
+            <p className="font-bold text-gray-900">{receipt.transactionId || 'N/A'}</p>
+          </div>
+        </div>
+
+        <div className="mt-12 mb-8 flex justify-between items-end">
+          <div>
+            <div className="h-16" />
+            <p className="font-semibold text-gray-900">Student Copy</p>
+          </div>
+          <div className="text-right">
+            <div className="h-16 border-b border-gray-400 w-48 mb-2" />
+            <p className="font-semibold text-gray-900">Sign / Stamp</p>
           </div>
         </div>
 

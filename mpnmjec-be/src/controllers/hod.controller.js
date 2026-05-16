@@ -10,6 +10,7 @@ import TimeTable from "../models/TimeTable.js";
 import PeriodConfig from "../models/PeriodConfig.js";
 import Marks from "../models/Marks.js";
 import Class from "../models/Class.js";
+import Achievement from "../models/Achievement.js";
 import { getAttendanceStats } from "../utils/period.js";
 import {
   validateScheduleConflicts,
@@ -1115,6 +1116,205 @@ export const getSubjectAnalytics = async (req, res) => {
 // REPORTS
 // ========================
 
+const isEmptyReportData = (data) => {
+  if (!data) return true;
+  if (Array.isArray(data)) return data.length === 0;
+  return typeof data === "object" && Object.keys(data).length === 0;
+};
+
+const buildHodReportData = async (hod, { type, year, section, start, end }) => {
+  const normalizedType = type === "performance" ? "academic" : type;
+  const studentFilter = { department: hod.department, status: "active" };
+  if (year) studentFilter.year = parseInt(year);
+  if (section) studentFilter.section = section;
+
+  if (normalizedType === "attendance") {
+    const students = await Student.find(studentFilter).populate("userId", "name").lean();
+    const rows = await Promise.all(students.map(async (student) => {
+      const records = await Attendance.find({
+        studentId: student._id,
+        date: { $gte: start, $lte: end },
+      }).select("status").lean();
+      const total = records.length;
+      const present = records.filter(r => r.status === "present").length;
+      const absent = records.filter(r => r.status === "absent").length;
+      const leave = records.filter(r => r.status === "leave").length;
+      return {
+        name: student.userId?.name,
+        rollNumber: student.rollNumber,
+        year: student.year,
+        section: student.section,
+        total,
+        present,
+        absent,
+        leave,
+        percentage: total > 0 ? Math.round((present / total) * 100) : 0,
+      };
+    }));
+
+    const totalClasses = rows.reduce((sum, row) => sum + row.total, 0);
+    const totalPresent = rows.reduce((sum, row) => sum + row.present, 0);
+    return {
+      summary: {
+        totalStudents: students.length,
+        totalAttendanceRecords: totalClasses,
+        presentRecords: totalPresent,
+        attendancePercentage: totalClasses ? Math.round((totalPresent / totalClasses) * 100) : 0,
+      },
+      students: rows,
+    };
+  }
+
+  if (normalizedType === "academic") {
+    const students = await Student.find(studentFilter)
+      .populate("userId", "name")
+      .select("rollNumber year section semester cgpa attendance")
+      .lean();
+    const studentIds = students.map(s => s._id);
+    const marks = await Marks.find({ studentId: { $in: studentIds } })
+      .populate({ path: "studentId", select: "rollNumber userId", populate: { path: "userId", select: "name" } })
+      .populate("courseId", "code name semester")
+      .lean();
+
+    const markSummary = marks.reduce((acc, mark) => {
+      const id = mark.studentId?._id?.toString();
+      if (!id) return acc;
+      if (!acc[id]) acc[id] = { subjects: 0, passed: 0, arrears: 0, totalMarks: 0 };
+      acc[id].subjects += 1;
+      acc[id].passed += mark.isPassed ? 1 : 0;
+      acc[id].arrears += mark.isPassed ? 0 : 1;
+      acc[id].totalMarks += mark.total || 0;
+      return acc;
+    }, {});
+
+    return {
+      summary: {
+        totalStudents: students.length,
+        averageCgpa: students.length ? Number((students.reduce((sum, s) => sum + (s.cgpa || 0), 0) / students.length).toFixed(2)) : 0,
+        averageAttendance: students.length ? Number((students.reduce((sum, s) => sum + (s.attendance || 0), 0) / students.length).toFixed(2)) : 0,
+        marksEntries: marks.length,
+      },
+      students: students.map(student => {
+        const summary = markSummary[student._id.toString()] || { subjects: 0, passed: 0, arrears: 0, totalMarks: 0 };
+        return {
+          name: student.userId?.name,
+          rollNumber: student.rollNumber,
+          year: student.year,
+          section: student.section,
+          semester: student.semester,
+          cgpa: student.cgpa,
+          attendance: student.attendance,
+          subjects: summary.subjects,
+          passed: summary.passed,
+          arrears: summary.arrears,
+          averageMarks: summary.subjects ? Math.round(summary.totalMarks / summary.subjects) : 0,
+        };
+      }),
+    };
+  }
+
+  if (normalizedType === "faculty") {
+    const faculty = await Faculty.find({ department: hod.department })
+      .populate("userId", "name email")
+      .populate("assignedCourses", "code name year semester")
+      .lean();
+
+    return {
+      summary: {
+        totalFaculty: faculty.length,
+        activeFaculty: faculty.filter(f => f.status === "active").length,
+        classAdvisors: faculty.filter(f => f.isClassAdvisor).length,
+      },
+      faculty: faculty.map(f => ({
+        name: f.userId?.name,
+        email: f.userId?.email,
+        empId: f.empId,
+        designation: f.designation,
+        experience: f.experience,
+        status: f.status,
+        isClassAdvisor: f.isClassAdvisor,
+        advisorFor: f.advisorFor,
+        assignedCourses: (f.assignedCourses || []).map(c => ({
+          code: c.code,
+          name: c.name,
+          year: c.year,
+          semester: c.semester,
+        })),
+      })),
+    };
+  }
+
+  if (normalizedType === "placement") {
+    const achievements = await Achievement.find({
+      department: hod.department,
+      type: "placement",
+      date: { $gte: start, $lte: end },
+    }).sort({ date: -1 }).lean();
+
+    return {
+      summary: {
+        totalPlacementRecords: achievements.length,
+        verifiedRecords: achievements.filter(a => a.isVerified).length,
+        highlightedRecords: achievements.filter(a => a.isHighlighted).length,
+      },
+      placements: achievements.map(a => ({
+        title: a.title,
+        description: a.description,
+        studentName: a.achievedBy?.name,
+        rollNumber: a.achievedBy?.rollNumber,
+        award: a.award,
+        prize: a.prize,
+        companyOrOrganizer: a.organizedBy,
+        date: a.date,
+        status: a.status,
+      })),
+    };
+  }
+
+  if (normalizedType === "overall") {
+    const students = await Student.find(studentFilter).select("_id cgpa attendance").lean();
+    const studentIds = students.map(s => s._id);
+    const [faculty, courses, attendanceRecords, marks, placementCount] = await Promise.all([
+      Faculty.find({ department: hod.department }).select("status isClassAdvisor").lean(),
+      Course.find({ department: hod.department, status: "active" }).select("code").lean(),
+      Attendance.find({ department: hod.department, date: { $gte: start, $lte: end } }).select("status").lean(),
+      Marks.find({ studentId: { $in: studentIds } }).select("isPassed").lean(),
+      Achievement.countDocuments({ department: hod.department, type: "placement", date: { $gte: start, $lte: end } }),
+    ]);
+    const present = attendanceRecords.filter(r => r.status === "present").length;
+    const passed = marks.filter(m => m.isPassed).length;
+
+    return {
+      department: hod.department,
+      dateRange: { start, end },
+      academics: {
+        totalStudents: students.length,
+        averageCgpa: students.length ? Number((students.reduce((sum, s) => sum + (s.cgpa || 0), 0) / students.length).toFixed(2)) : 0,
+        averageAttendance: students.length ? Number((students.reduce((sum, s) => sum + (s.attendance || 0), 0) / students.length).toFixed(2)) : 0,
+        passPercentage: marks.length ? Math.round((passed / marks.length) * 100) : 0,
+      },
+      attendance: {
+        totalRecords: attendanceRecords.length,
+        present,
+        percentage: attendanceRecords.length ? Math.round((present / attendanceRecords.length) * 100) : 0,
+      },
+      faculty: {
+        total: faculty.length,
+        active: faculty.filter(f => f.status === "active").length,
+        classAdvisors: faculty.filter(f => f.isClassAdvisor).length,
+      },
+      courses: { active: courses.length },
+      placements: { records: placementCount },
+    };
+  }
+
+  return {
+    summary: {
+      message: "No report data available for this report type",
+    },
+  };
+};
+
 // GET /api/hod/reports - Get generated reports
 export const getReports = async (req, res) => {
   try {
@@ -1166,7 +1366,13 @@ export const getReports = async (req, res) => {
 export const generateReport = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { type, category, year, section, startDate, endDate, title } = req.body;
+    const { category, year, section, startDate, endDate, title } = req.body;
+    const type = String(req.body.type || "").toLowerCase();
+    const allowedTypes = ["academic", "attendance", "faculty", "overall", "placement", "performance"];
+
+    if (!allowedTypes.includes(type)) {
+      return res.status(400).json({ error: "Invalid report type" });
+    }
 
     const hod = await HOD.findOne({ userId });
     if (!hod) {
@@ -1175,16 +1381,15 @@ export const generateReport = async (req, res) => {
 
     const Report = (await import("../models/Report.js")).default;
 
-    // Generate report data based on type
+    const start = startDate ? new Date(startDate) : new Date(new Date().setMonth(new Date().getMonth() - 1));
+    const end = endDate ? new Date(endDate) : new Date();
     let data = {};
-    const filter = { department: hod.department, status: 'active' };
-    if (year) filter.year = parseInt(year);
-    if (section) filter.section = section;
+    const studentFilter = { department: hod.department, status: "active" };
+    if (year) studentFilter.year = parseInt(year);
+    if (section) studentFilter.section = section;
 
     if (type === "attendance") {
-      const students = await Student.find(filter).populate("userId", "name");
-      const start = startDate ? new Date(startDate) : new Date(new Date().setMonth(new Date().getMonth() - 1));
-      const end = endDate ? new Date(endDate) : new Date();
+      const students = await Student.find(studentFilter).populate("userId", "name");
 
       data = await Promise.all(students.map(async (student) => {
         const records = await Attendance.find({
@@ -1201,24 +1406,162 @@ export const generateReport = async (req, res) => {
           percentage: total > 0 ? Math.round((present / total) * 100) : 0,
         };
       }));
-    } else if (type === "performance") {
-      data = await Student.find(filter)
+    } else if (type === "academic" || type === "performance") {
+      const students = await Student.find(studentFilter)
         .populate("userId", "name")
-        .select("rollNumber year section cgpa")
+        .select("rollNumber year section semester cgpa attendance")
         .lean();
+
+      const studentIds = students.map(s => s._id);
+      const marks = await Marks.find({ studentId: { $in: studentIds } })
+        .populate({ path: "studentId", select: "rollNumber userId", populate: { path: "userId", select: "name" } })
+        .populate("courseId", "code name semester")
+        .lean();
+
+      const markSummary = marks.reduce((acc, mark) => {
+        const id = mark.studentId?._id?.toString();
+        if (!id) return acc;
+        if (!acc[id]) {
+          acc[id] = { subjects: 0, passed: 0, arrears: 0, totalMarks: 0 };
+        }
+        acc[id].subjects += 1;
+        acc[id].passed += mark.isPassed ? 1 : 0;
+        acc[id].arrears += mark.isPassed ? 0 : 1;
+        acc[id].totalMarks += mark.total || 0;
+        return acc;
+      }, {});
+
+      data = {
+        summary: {
+          totalStudents: students.length,
+          averageCgpa: students.length ? Number((students.reduce((sum, s) => sum + (s.cgpa || 0), 0) / students.length).toFixed(2)) : 0,
+          averageAttendance: students.length ? Number((students.reduce((sum, s) => sum + (s.attendance || 0), 0) / students.length).toFixed(2)) : 0,
+          marksEntries: marks.length,
+        },
+        students: students.map(student => {
+          const summary = markSummary[student._id.toString()] || { subjects: 0, passed: 0, arrears: 0, totalMarks: 0 };
+          return {
+            name: student.userId?.name,
+            rollNumber: student.rollNumber,
+            year: student.year,
+            section: student.section,
+            semester: student.semester,
+            cgpa: student.cgpa,
+            attendance: student.attendance,
+            subjects: summary.subjects,
+            passed: summary.passed,
+            arrears: summary.arrears,
+            averageMarks: summary.subjects ? Math.round(summary.totalMarks / summary.subjects) : 0,
+          };
+        }),
+      };
+    } else if (type === "faculty") {
+      const faculty = await Faculty.find({ department: hod.department })
+        .populate("userId", "name email")
+        .populate("assignedCourses", "code name year semester")
+        .lean();
+
+      data = {
+        summary: {
+          totalFaculty: faculty.length,
+          activeFaculty: faculty.filter(f => f.status === "active").length,
+          classAdvisors: faculty.filter(f => f.isClassAdvisor).length,
+        },
+        faculty: faculty.map(f => ({
+          name: f.userId?.name,
+          email: f.userId?.email,
+          empId: f.empId,
+          designation: f.designation,
+          experience: f.experience,
+          status: f.status,
+          isClassAdvisor: f.isClassAdvisor,
+          advisorFor: f.advisorFor,
+          assignedCourses: (f.assignedCourses || []).map(c => ({
+            code: c.code,
+            name: c.name,
+            year: c.year,
+            semester: c.semester,
+          })),
+        })),
+      };
+    } else if (type === "placement") {
+      const achievements = await Achievement.find({
+        department: hod.department,
+        type: "placement",
+        date: { $gte: start, $lte: end },
+      }).sort({ date: -1 }).lean();
+
+      data = {
+        summary: {
+          totalPlacementRecords: achievements.length,
+          verifiedRecords: achievements.filter(a => a.isVerified).length,
+          highlightedRecords: achievements.filter(a => a.isHighlighted).length,
+        },
+        placements: achievements.map(a => ({
+          title: a.title,
+          description: a.description,
+          studentName: a.achievedBy?.name,
+          rollNumber: a.achievedBy?.rollNumber,
+          award: a.award,
+          prize: a.prize,
+          companyOrOrganizer: a.organizedBy,
+          date: a.date,
+          status: a.status,
+        })),
+      };
+    } else if (type === "overall") {
+      const overallStudents = await Student.find(studentFilter).select("_id cgpa attendance").lean();
+      const overallStudentIds = overallStudents.map(s => s._id);
+      const [students, faculty, courses, attendanceRecords, marks, placementCount] = await Promise.all([
+        Promise.resolve(overallStudents),
+        Faculty.find({ department: hod.department }).select("status isClassAdvisor").lean(),
+        Course.find({ department: hod.department, status: "active" }).select("code").lean(),
+        Attendance.find({ department: hod.department, date: { $gte: start, $lte: end } }).select("status").lean(),
+        Marks.find({ studentId: { $in: overallStudentIds } }).select("isPassed").lean(),
+        Achievement.countDocuments({ department: hod.department, type: "placement", date: { $gte: start, $lte: end } }),
+      ]);
+
+      const present = attendanceRecords.filter(r => r.status === "present").length;
+      const passed = marks.filter(m => m.isPassed).length;
+      data = {
+        department: hod.department,
+        dateRange: { start, end },
+        academics: {
+          totalStudents: students.length,
+          averageCgpa: students.length ? Number((students.reduce((sum, s) => sum + (s.cgpa || 0), 0) / students.length).toFixed(2)) : 0,
+          averageAttendance: students.length ? Number((students.reduce((sum, s) => sum + (s.attendance || 0), 0) / students.length).toFixed(2)) : 0,
+          passPercentage: marks.length ? Math.round((passed / marks.length) * 100) : 0,
+        },
+        attendance: {
+          totalRecords: attendanceRecords.length,
+          present,
+          percentage: attendanceRecords.length ? Math.round((present / attendanceRecords.length) * 100) : 0,
+        },
+        faculty: {
+          total: faculty.length,
+          active: faculty.filter(f => f.status === "active").length,
+          classAdvisors: faculty.filter(f => f.isClassAdvisor).length,
+        },
+        courses: {
+          active: courses.length,
+        },
+        placements: {
+          records: placementCount,
+        },
+      };
     }
 
     const report = await Report.create({
+      data: await buildHodReportData(hod, { type, year, section, start, end }),
       title: title || `${type.charAt(0).toUpperCase() + type.slice(1)} Report - ${new Date().toLocaleDateString()}`,
-      type,
+      type: type === "performance" ? "academic" : type,
       category: category || "monthly",
       department: hod.department,
       year,
       section,
-      dateRange: { start: startDate, end: endDate },
+      dateRange: { start, end },
       generatedBy: userId,
       generatedByRole: "hod",
-      data,
     });
 
     res.status(201).json({
@@ -1251,6 +1594,20 @@ export const getReportById = async (req, res) => {
 
     if (!report) {
       return res.status(404).json({ error: "Report not found" });
+    }
+
+    if (isEmptyReportData(report.data)) {
+      const start = report.dateRange?.start || new Date(new Date(report.createdAt).setMonth(new Date(report.createdAt).getMonth() - 1));
+      const end = report.dateRange?.end || report.createdAt || new Date();
+      report.data = await buildHodReportData(hod, {
+        type: report.type,
+        year: report.year,
+        section: report.section,
+        start,
+        end,
+      });
+      report.dateRange = { start, end };
+      await report.save();
     }
 
     res.json({ report });

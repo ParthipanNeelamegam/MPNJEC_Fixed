@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import {
-  Home, User, BookOpen, Calendar, DollarSign, CalendarDays,
+  Home, User, BookOpen, Calendar, DollarSign, Award, CalendarDays,
   Loader2, Clock, CheckCircle, XCircle, Send, AlertCircle, Info
 } from 'lucide-react';
 import { Card } from '../ui/card';
@@ -50,6 +50,7 @@ const navItems = [
   { icon: BookOpen, label: 'Academics', path: '/student/academics' },
   { icon: Calendar, label: 'Attendance', path: '/student/attendance' },
   { icon: DollarSign, label: 'Fees', path: '/student/fees' },
+  { icon: Award, label: 'Certificates', path: '/student/certificates' },
   { icon: CalendarDays, label: 'Leave', path: '/student/leave' },
 ];
 

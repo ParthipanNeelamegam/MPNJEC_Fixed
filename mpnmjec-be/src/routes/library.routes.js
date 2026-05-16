@@ -12,6 +12,7 @@ import {
   getTransactions,
   getStudents,
   exportTransactionsCSV,
+  updateTransactionDueDate,
 } from "../controllers/library.controller.js";
 
 const router = express.Router();
@@ -40,5 +41,6 @@ router.get("/students", getStudents);
 // Transactions
 router.get("/transactions", getTransactions);
 router.get("/transactions/export", exportTransactionsCSV);
+router.put("/transactions/:transactionId/due-date", updateTransactionDueDate);
 
 export default router;

@@ -5,6 +5,11 @@ const feeItemSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  category: {
+    type: String,
+    enum: ["semester", "mess", "tuition", "book", "hostel", "exam", "other"],
+    default: "semester",
+  },
   amount: {
     type: Number,
     required: true,
@@ -22,7 +27,7 @@ const paymentSchema = new mongoose.Schema({
   },
   method: {
     type: String,
-    enum: ["online", "cash", "cheque", "dd"],
+    enum: ["online", "upi", "cash", "cheque", "dd", "card", "netbanking"],
     default: "online",
   },
   transactionId: {
@@ -32,6 +37,9 @@ const paymentSchema = new mongoose.Schema({
     type: String,
   },
   remarks: {
+    type: String,
+  },
+  purpose: {
     type: String,
   },
 });
@@ -59,10 +67,18 @@ const feeSchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
+  fineAmount: {
+    type: Number,
+    default: 0,
+  },
+  finePerDay: {
+    type: Number,
+    default: 0,
+  },
   pendingAmount: {
     type: Number,
     default: function() {
-      return this.totalAmount - this.paidAmount;
+      return this.totalAmount + (this.fineAmount || 0) - this.paidAmount;
     },
   },
   dueDate: {
@@ -79,8 +95,19 @@ const feeSchema = new mongoose.Schema({
 
 // Calculate pending amount before saving
 feeSchema.pre("save", async function() {
-  this.pendingAmount = this.totalAmount - this.paidAmount;
-  if (this.paidAmount >= this.totalAmount) {
+  if (this.dueDate && this.finePerDay > 0 && this.paidAmount < this.totalAmount) {
+    const today = new Date();
+    if (today > this.dueDate) {
+      const due = new Date(this.dueDate);
+      due.setHours(0, 0, 0, 0);
+      today.setHours(0, 0, 0, 0);
+      const daysOverdue = Math.max(0, Math.ceil((today - due) / (1000 * 60 * 60 * 24)));
+      this.fineAmount = daysOverdue * this.finePerDay;
+    }
+  }
+
+  this.pendingAmount = Math.max(0, this.totalAmount + (this.fineAmount || 0) - this.paidAmount);
+  if (this.paidAmount >= this.totalAmount + (this.fineAmount || 0)) {
     this.status = "paid";
   } else if (this.paidAmount > 0) {
     this.status = "partial";

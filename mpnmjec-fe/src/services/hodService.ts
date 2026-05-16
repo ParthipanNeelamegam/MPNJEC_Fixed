@@ -367,7 +367,7 @@ export const getReports = async (filters?: ReportFilters) => {
 };
 
 export interface GenerateReportData {
-  type: 'attendance' | 'performance' | 'fee' | 'academic';
+  type: 'academic' | 'attendance' | 'faculty' | 'overall' | 'placement' | 'performance';
   category?: string;
   year?: number;
   section?: string;

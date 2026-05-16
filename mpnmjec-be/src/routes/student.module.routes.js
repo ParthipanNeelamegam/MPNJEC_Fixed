@@ -17,7 +17,9 @@ import {
   getCertificateTypes,
   getStudentCertificates,
   applyCertificate,
+  requestBonafideCertificate,
   payCertificateFee,
+  downloadCertificate,
 } from "../controllers/student.module.controller.js";
 
 const router = express.Router();
@@ -44,6 +46,8 @@ router.post("/materials/:id/download", authenticate, downloadMaterial);
 router.get("/certificates/types", authenticate, getCertificateTypes);
 router.get("/certificates", authenticate, getStudentCertificates);
 router.post("/certificates", authenticate, applyCertificate);
+router.post("/certificates/request", authenticate, requestBonafideCertificate);
 router.post("/certificates/:id/pay", authenticate, payCertificateFee);
+router.get("/certificates/:certificateNumber/download", downloadCertificate);
 
 export default router;

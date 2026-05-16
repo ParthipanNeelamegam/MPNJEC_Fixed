@@ -48,6 +48,14 @@ interface Student {
   status: string;
   attendance: number;
   cgpa: number;
+  fatherName?: string;
+  motherName?: string;
+  dob?: string;
+  aadhaar?: string;
+  mobile?: string;
+  parentMobile?: string;
+  address?: string;
+  admissionYear?: number;
 }
 
 export default function AdminStudents() {
@@ -85,6 +93,14 @@ export default function AdminStudents() {
           status: s.status === 'active' ? 'Active' : 'Inactive',
           attendance: s.attendance || 0,
           cgpa: s.cgpa || 0,
+          fatherName: s.fatherName || '',
+          motherName: s.motherName || '',
+          dob: s.dob ? String(s.dob).slice(0, 10) : '',
+          aadhaar: s.aadhaar || '',
+          mobile: s.mobile || '',
+          parentMobile: s.parentMobile || '',
+          address: s.address || '',
+          admissionYear: s.admissionYear,
         }));
       setStudents(apiStudents);
     } catch (error) {
@@ -101,6 +117,14 @@ export default function AdminStudents() {
       department: student.department.toLowerCase(),
       year: student.year,
       section: student.section,
+      fatherName: student.fatherName,
+      motherName: student.motherName,
+      dob: student.dob,
+      aadhaar: student.aadhaar,
+      mobile: student.mobile,
+      parentMobile: student.parentMobile,
+      address: student.address,
+      admissionYear: student.admissionYear,
       cgpa: student.cgpa,
       attendance: student.attendance,
     });
@@ -352,7 +376,7 @@ export default function AdminStudents() {
 
       {/* Edit Student Dialog */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="sm:max-w-[720px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Student</DialogTitle>
           </DialogHeader>
@@ -421,6 +445,40 @@ export default function AdminStudents() {
                   onChange={(e) => setEditForm({ ...editForm, cgpa: parseFloat(e.target.value) })}
                 />
               </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="edit-father">Father's Name</Label>
+                <Input id="edit-father" value={editForm.fatherName || ''} onChange={(e) => setEditForm({ ...editForm, fatherName: e.target.value })} />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="edit-mother">Mother's Name</Label>
+                <Input id="edit-mother" value={editForm.motherName || ''} onChange={(e) => setEditForm({ ...editForm, motherName: e.target.value })} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="edit-dob">Date of Birth</Label>
+                <Input id="edit-dob" type="date" value={editForm.dob || ''} onChange={(e) => setEditForm({ ...editForm, dob: e.target.value })} />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="edit-aadhaar">Aadhaar</Label>
+                <Input id="edit-aadhaar" value={editForm.aadhaar || ''} onChange={(e) => setEditForm({ ...editForm, aadhaar: e.target.value })} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="edit-mobile">Mobile</Label>
+                <Input id="edit-mobile" value={editForm.mobile || ''} onChange={(e) => setEditForm({ ...editForm, mobile: e.target.value })} />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="edit-parent-mobile">Parent Mobile</Label>
+                <Input id="edit-parent-mobile" value={editForm.parentMobile || ''} onChange={(e) => setEditForm({ ...editForm, parentMobile: e.target.value })} />
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="edit-address">Address</Label>
+              <Input id="edit-address" value={editForm.address || ''} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} />
             </div>
           </div>
           <DialogFooter>

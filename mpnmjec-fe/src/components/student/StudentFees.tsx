@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 
 interface FeeItem {
   name: string;
+  category?: string;
   amount: number;
 }
 
@@ -34,6 +35,15 @@ interface FeeSummary {
   dueDate?: string;
   academicYear?: string;
   semester?: number;
+  fineAmount?: number;
+  dueAlert?: string | null;
+  upi?: {
+    id: string;
+    name: string;
+    amount: number;
+    purpose: string;
+    url: string;
+  };
 }
 
 const navItems = [
@@ -42,6 +52,7 @@ const navItems = [
   { icon: BookOpen, label: 'Academics', path: '/student/academics' },
   { icon: Calendar, label: 'Attendance', path: '/student/attendance' },
   { icon: DollarSign, label: 'Fees', path: '/student/fees' },
+  { icon: Award, label: 'Certificates', path: '/student/certificates' },
 ];
 
 export default function StudentFees() {
@@ -176,6 +187,17 @@ export default function StudentFees() {
                 </div>
               </div>
 
+              {summary?.fineAmount ? (
+                <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                  Fine added: Rs.{summary.fineAmount.toLocaleString()}
+                </div>
+              ) : null}
+              {summary?.dueAlert && (
+                <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm font-medium text-red-700">
+                  {summary.dueAlert}
+                </div>
+              )}
+
               <Dialog>
                 <DialogTrigger asChild>
                   <Button className="w-full mt-4 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 h-12 text-base font-medium shadow-lg shadow-green-500/30">
@@ -196,13 +218,15 @@ export default function StudentFees() {
                         <div className="flex justify-center mb-4">
                           <div className="p-4 bg-white rounded-2xl shadow-lg">
                             <QRCodeSVG 
-                              value="upi://pay?pa=college@upi&pn=CollegeName&am=15000&cu=INR" 
+                              value={summary?.upi?.url || `upi://pay?pa=college@upi&pn=CollegeName&am=${totalPending}&cu=INR`}
                               size={180}
                               level="H"
                             />
                           </div>
                         </div>
-                        <p className="text-xs text-gray-500">college@upi</p>
+                        <p className="text-sm font-semibold text-gray-900">Amount: Rs.{totalPending.toLocaleString()}</p>
+                        <p className="text-xs text-gray-500">{summary?.upi?.id || 'college@upi'}</p>
+                        <p className="text-xs text-gray-500">{summary?.upi?.purpose || 'Fee payment'}</p>
                       </div>
                     </Card>
 

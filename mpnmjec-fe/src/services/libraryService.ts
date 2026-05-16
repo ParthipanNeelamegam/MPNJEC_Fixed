@@ -128,6 +128,10 @@ export const getTransactions = async (status?: string, search?: string) => {
   return axiosInstance.get('/api/library/transactions', { params });
 };
 
+export const updateTransactionDueDate = async (transactionId: string, dueDate: string) => {
+  return axiosInstance.put(`/api/library/transactions/${transactionId}/due-date`, { dueDate });
+};
+
 export const exportTransactionsCSV = async () => {
   return axiosInstance.get('/api/library/transactions/export', {
     responseType: 'blob',

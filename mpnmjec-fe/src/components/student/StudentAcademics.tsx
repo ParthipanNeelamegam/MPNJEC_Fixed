@@ -33,6 +33,7 @@ const navItems = [
   { icon: BookOpen, label: 'Academics', path: '/student/academics' },
   { icon: Calendar, label: 'Attendance', path: '/student/attendance' },
   { icon: DollarSign, label: 'Fees', path: '/student/fees' },
+  { icon: Award, label: 'Certificates', path: '/student/certificates' },
 ];
 
 export default function StudentAcademics() { 

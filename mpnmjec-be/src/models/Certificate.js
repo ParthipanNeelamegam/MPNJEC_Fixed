@@ -67,7 +67,7 @@ const certificateSchema = new mongoose.Schema({
 
 // Generate certificate number on approval
 certificateSchema.pre("save", async function() {
-  if (this.isModified("status") && this.status === "ready" && !this.certificateNumber) {
+  if (this.isModified("status") && ["approved", "ready"].includes(this.status) && !this.certificateNumber) {
     const year = new Date().getFullYear();
     const random = Math.floor(Math.random() * 10000).toString().padStart(4, "0");
     this.certificateNumber = `CERT-${year}-${random}`;

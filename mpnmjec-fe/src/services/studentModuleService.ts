@@ -46,6 +46,8 @@ export const getMyLeaves = async () => {
 
 interface PayFeesRequest {
     amount: number;
+    transactionId?: string;
+    purpose?: string;
 }
 
 interface PayFeesResponse {
@@ -54,8 +56,8 @@ interface PayFeesResponse {
     message: string;
 }
 
-export const payStudentFees = async (amount: number): Promise<PayFeesResponse> => {
-    return axiosInstance.post('/api/student/fees/pay', { amount } as PayFeesRequest);
+export const payStudentFees = async (amount: number, transactionId?: string, purpose?: string): Promise<PayFeesResponse> => {
+    return axiosInstance.post('/api/student/fees/pay', { amount, transactionId, purpose } as PayFeesRequest);
 };
 
 // ========================
@@ -116,5 +118,5 @@ export const payCertificateFee = async (id: string) => {
 // ========================
 
 export const getFeeReceipt = async (id: string) => {
-  return axiosInstance.get(`/api/student/receipts/${id}`);
+  return axiosInstance.get(`/api/student/fees/receipt/${id}`);
 };

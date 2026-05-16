@@ -8,6 +8,7 @@ import Fee from "../models/Fee.js";
 import Certificate from "../models/Certificate.js";
 import Attendance from "../models/Attendance.js";
 import Leave from "../models/Leave.js";
+import Notification from "../models/Notification.js";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 
@@ -16,6 +17,21 @@ const generatePassword = () => {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   const bytes = crypto.randomBytes(10);
   return [...bytes].map(b => chars[b % chars.length]).join('');
+};
+
+const normalizeFeeStructure = (feeStructure = [], totalAmount = 0) => {
+  if (Array.isArray(feeStructure) && feeStructure.length > 0) {
+    return feeStructure.map(item => ({
+      name: item.name || item.category || "Semester Fee",
+      category: item.category || "semester",
+      amount: Number(item.amount || 0),
+    })).filter(item => item.amount > 0);
+  }
+
+  const amount = Number(totalAmount || 0);
+  return amount > 0 ? [
+    { name: "Tuition Fee", category: "tuition", amount },
+  ] : [];
 };
 
 // ========================
@@ -149,6 +165,14 @@ export const getStudents = async (req, res) => {
       department: s.department,
       year: s.year,
       section: s.section,
+      fatherName: s.fatherName,
+      motherName: s.motherName,
+      dob: s.dob,
+      aadhaar: s.aadhaar,
+      mobile: s.mobile,
+      parentMobile: s.parentMobile,
+      address: s.address,
+      admissionYear: s.admissionYear,
       cgpa: s.cgpa,
       attendance: s.attendance,
       status: s.status,
@@ -164,7 +188,10 @@ export const getStudents = async (req, res) => {
 export const updateStudent = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, email, rollNumber, department, year, section, cgpa, attendance, status } = req.body;
+    const {
+      name, email, rollNumber, department, year, section, cgpa, attendance, status,
+      fatherName, motherName, dob, aadhaar, mobile, parentMobile, address, admissionYear,
+    } = req.body;
 
     const student = await Student.findById(id);
     if (!student) {
@@ -184,6 +211,14 @@ export const updateStudent = async (req, res) => {
     if (department) student.department = department.toLowerCase();
     if (year) student.year = year;
     if (section !== undefined) student.section = section;
+    if (fatherName !== undefined) student.fatherName = fatherName;
+    if (motherName !== undefined) student.motherName = motherName;
+    if (dob !== undefined) student.dob = dob ? new Date(dob) : undefined;
+    if (aadhaar !== undefined) student.aadhaar = aadhaar;
+    if (mobile !== undefined) student.mobile = mobile;
+    if (parentMobile !== undefined) student.parentMobile = parentMobile;
+    if (address !== undefined) student.address = address;
+    if (admissionYear !== undefined) student.admissionYear = admissionYear ? parseInt(admissionYear) : undefined;
     if (cgpa !== undefined) student.cgpa = cgpa;
     if (attendance !== undefined) student.attendance = attendance;
     if (status) student.status = status;
@@ -204,6 +239,14 @@ export const updateStudent = async (req, res) => {
         department: updatedStudent.department,
         year: updatedStudent.year,
         section: updatedStudent.section,
+        fatherName: updatedStudent.fatherName,
+        motherName: updatedStudent.motherName,
+        dob: updatedStudent.dob,
+        aadhaar: updatedStudent.aadhaar,
+        mobile: updatedStudent.mobile,
+        parentMobile: updatedStudent.parentMobile,
+        address: updatedStudent.address,
+        admissionYear: updatedStudent.admissionYear,
         cgpa: updatedStudent.cgpa,
         attendance: updatedStudent.attendance,
         status: updatedStudent.status,
@@ -1401,11 +1444,17 @@ export const getFeeRecords = async (req, res) => {
       year: fee.studentId?.year,
       academicYear: fee.academicYear,
       semester: fee.semester,
+      feeStructure: fee.feeStructure,
       totalAmount: fee.totalAmount,
       paidAmount: fee.paidAmount,
+      fineAmount: fee.fineAmount || 0,
+      finePerDay: fee.finePerDay || 0,
       pendingAmount: fee.pendingAmount,
       dueDate: fee.dueDate,
       status: fee.status,
+      transactionId: fee.payments?.length > 0
+        ? fee.payments[fee.payments.length - 1].transactionId
+        : null,
       lastPaymentDate: fee.payments?.length > 0 
         ? fee.payments[fee.payments.length - 1].date 
         : null,
@@ -1509,12 +1558,57 @@ export const getFeeSummary = async (req, res) => {
 // POST /api/admin/fees - Create fee record for student
 export const createFeeRecord = async (req, res) => {
   try {
-    const { studentId, academicYear, semester, feeStructure, totalAmount, dueDate } = req.body;
+    const { studentId, academicYear, semester, feeStructure, totalAmount, dueDate, finePerDay = 0, applyToAll = false, department, year } = req.body;
 
-    if (!studentId || !academicYear || !semester || !totalAmount || !dueDate) {
+    if ((!studentId && !applyToAll) || !academicYear || !semester || !totalAmount || !dueDate) {
       return res.status(400).json({ 
-        error: "Student ID, academic year, semester, total amount, and due date are required" 
+        error: "Student ID or applyToAll, academic year, semester, total amount, and due date are required" 
       });
+    }
+
+    const normalizedStructure = normalizeFeeStructure(feeStructure, totalAmount);
+
+    if (applyToAll) {
+      const studentFilter = { status: "active" };
+      if (department) studentFilter.department = department.toLowerCase();
+      if (year) studentFilter.year = parseInt(year);
+      const students = await Student.find(studentFilter).select("_id userId");
+      const results = [];
+
+      for (const student of students) {
+        const existingFee = await Fee.findOne({ studentId: student._id, academicYear, semester });
+        if (existingFee) {
+          existingFee.feeStructure = normalizedStructure;
+          existingFee.totalAmount = Number(totalAmount);
+          existingFee.dueDate = new Date(dueDate);
+          existingFee.finePerDay = Number(finePerDay || 0);
+          await existingFee.save();
+          results.push(existingFee);
+        } else {
+          results.push(await Fee.create({
+            studentId: student._id,
+            academicYear,
+            semester,
+            feeStructure: normalizedStructure,
+            totalAmount: Number(totalAmount),
+            dueDate: new Date(dueDate),
+            finePerDay: Number(finePerDay || 0),
+          }));
+        }
+
+        if (student.userId) {
+          await Notification.create({
+            userId: student.userId,
+            title: "Fee Updated",
+            message: `Semester ${semester} fee has been updated. Pending amount: Rs.${Number(totalAmount).toLocaleString("en-IN")}`,
+            type: "fee",
+            priority: "high",
+            link: "/student/fees",
+          });
+        }
+      }
+
+      return res.status(201).json({ message: "Global fee updated successfully", count: results.length, fees: results });
     }
 
     const student = await Student.findById(studentId);
@@ -1534,9 +1628,10 @@ export const createFeeRecord = async (req, res) => {
       studentId,
       academicYear,
       semester,
-      feeStructure: feeStructure || [],
-      totalAmount,
+      feeStructure: normalizedStructure,
+      totalAmount: Number(totalAmount),
       dueDate: new Date(dueDate),
+      finePerDay: Number(finePerDay || 0),
     });
 
     res.status(201).json({ message: "Fee record created successfully", fee });
@@ -1549,16 +1644,17 @@ export const createFeeRecord = async (req, res) => {
 export const updateFeeRecord = async (req, res) => {
   try {
     const { id } = req.params;
-    const { feeStructure, totalAmount, dueDate, status } = req.body;
+    const { feeStructure, totalAmount, dueDate, status, finePerDay } = req.body;
 
     const fee = await Fee.findById(id);
     if (!fee) {
       return res.status(404).json({ error: "Fee record not found" });
     }
 
-    if (feeStructure) fee.feeStructure = feeStructure;
-    if (totalAmount) fee.totalAmount = totalAmount;
+    if (feeStructure) fee.feeStructure = normalizeFeeStructure(feeStructure, totalAmount || fee.totalAmount);
+    if (totalAmount) fee.totalAmount = Number(totalAmount);
     if (dueDate) fee.dueDate = new Date(dueDate);
+    if (finePerDay !== undefined) fee.finePerDay = Number(finePerDay || 0);
     if (status) fee.status = status;
 
     await fee.save();
@@ -1573,7 +1669,7 @@ export const updateFeeRecord = async (req, res) => {
 export const recordPayment = async (req, res) => {
   try {
     const { id } = req.params;
-    const { amount, method, transactionId, remarks } = req.body;
+    const { amount, method, transactionId, remarks, purpose } = req.body;
 
     if (!amount || amount <= 0) {
       return res.status(400).json({ error: "Valid payment amount is required" });
@@ -1597,10 +1693,26 @@ export const recordPayment = async (req, res) => {
       transactionId,
       receiptNumber,
       remarks,
+      purpose: purpose || fee.feeStructure?.map(item => item.name).join(", ") || `Semester ${fee.semester} Fee`,
     });
 
     fee.paidAmount += amount;
     await fee.save();
+
+    const populatedFee = await Fee.findById(id).populate({
+      path: "studentId",
+      populate: { path: "userId", select: "name email" },
+    });
+    if (populatedFee?.studentId?.userId?._id) {
+      await Notification.create({
+        userId: populatedFee.studentId.userId._id,
+        title: "Fee Payment Accepted",
+        message: `Payment of Rs.${Number(amount).toLocaleString("en-IN")} has been recorded. Receipt: ${receiptNumber}`,
+        type: "fee",
+        priority: "normal",
+        link: "/student/fees",
+      });
+    }
 
     res.json({ 
       message: "Payment recorded successfully", 
@@ -1710,6 +1822,20 @@ export const updateCertificateStatus = async (req, res) => {
     if (remarks) certificate.remarks = remarks;
 
     await certificate.save();
+    const populatedCert = await Certificate.findById(id).populate({
+      path: "studentId",
+      populate: { path: "userId", select: "name" },
+    });
+    if (populatedCert?.studentId?.userId?._id) {
+      await Notification.create({
+        userId: populatedCert.studentId.userId._id,
+        title: "Certificate Request Updated",
+        message: `${populatedCert.typeName} is now ${populatedCert.status}.`,
+        type: "certificate",
+        priority: populatedCert.status === "ready" ? "high" : "normal",
+        link: "/student/certificates",
+      });
+    }
 
     res.json({ message: "Certificate status updated successfully", certificate });
   } catch (error) {

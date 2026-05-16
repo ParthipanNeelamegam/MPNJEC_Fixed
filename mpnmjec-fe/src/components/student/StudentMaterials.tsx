@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Home, User, BookOpen, Calendar, DollarSign, Download, FileText, Video, Loader2 } from 'lucide-react';
+import { Home, User, BookOpen, Calendar, DollarSign, Award, Download, FileText, Video, Loader2 } from 'lucide-react';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import DesktopSidebar from '../shared/DesktopSidebar';
@@ -25,6 +25,7 @@ const navItems = [
   { icon: BookOpen, label: 'Academics', path: '/student/academics' },
   { icon: Calendar, label: 'Attendance', path: '/student/attendance' },
   { icon: DollarSign, label: 'Fees', path: '/student/fees' },
+  { icon: Award, label: 'Certificates', path: '/student/certificates' },
 ];
 
 export default function StudentMaterials() {

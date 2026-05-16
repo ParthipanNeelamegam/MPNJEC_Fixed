@@ -59,9 +59,7 @@ export const getStudentDashboardSummary = async (req, res) => {
     const pendingCertificates = await Certificate.countDocuments({ studentId, status: 'pending' });
 
     // Recent notifications
-    const notifications = await Notification.find({ 
-      $or: [{ targetRole: 'student' }, { targetId: studentId }]
-    }).sort({ createdAt: -1 }).limit(5);
+    const notifications = await Notification.find({ userId }).sort({ createdAt: -1 }).limit(5);
 
     res.json({
       success: true,
@@ -99,5 +97,31 @@ export const getStudentDashboardSummary = async (req, res) => {
   } catch (error) {
     console.error("Dashboard summary error:", error);
     res.status(500).json({ error: error.message });
+  }
+};
+
+// GET /api/student/notifications
+export const getStudentNotifications = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const notifications = await Notification.find({
+      userId,
+      $or: [{ expiresAt: { $exists: false } }, { expiresAt: null }, { expiresAt: { $gte: new Date() } }],
+    }).sort({ createdAt: -1 }).limit(30);
+
+    res.json({
+      notifications: notifications.map(n => ({
+        _id: n._id,
+        title: n.title,
+        message: n.message,
+        type: n.type,
+        priority: n.priority,
+        isRead: n.isRead,
+        link: n.link,
+        createdAt: n.createdAt,
+      })),
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Failed to fetch notifications" });
   }
 };

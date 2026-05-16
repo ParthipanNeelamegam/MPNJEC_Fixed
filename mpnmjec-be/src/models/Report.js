@@ -10,7 +10,7 @@ const reportSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ["attendance", "performance", "fee", "academic", "faculty", "student", "department", "custom"],
+    enum: ["attendance", "performance", "fee", "academic", "faculty", "student", "department", "overall", "placement", "custom"],
     required: true,
   },
   category: {

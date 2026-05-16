@@ -13,5 +13,9 @@ export const fetchStudentPerformance = async () => {
 };
 
 export const requestBonafideCertificate = async () => {
-  return axiosInstance.post('/api/student/certificates/request', {});
+  return axiosInstance.post('/api/student/certificates', {
+    type: 'bonafide',
+    purpose: 'General purpose',
+    copies: 1,
+  });
 };

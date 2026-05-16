@@ -57,8 +57,8 @@ export const getFeesHistory = async () => {
   return axiosInstance.get('/api/student/fees/history');
 };
 
-export const payFees = async (amount: number) => {
-  return axiosInstance.post('/api/student/fees/pay', { amount });
+export const payFees = async (amount: number, transactionId?: string, purpose?: string) => {
+  return axiosInstance.post('/api/student/fees/pay', { amount, transactionId, purpose });
 };
 
 export const getStudentFeeStructure = async () => {

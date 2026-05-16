@@ -372,6 +372,32 @@ export const getTransactions = async (req, res) => {
   }
 };
 
+// PUT /api/library/transactions/:transactionId/due-date - Update due date
+export const updateTransactionDueDate = async (req, res) => {
+  try {
+    const { transactionId } = req.params;
+    const { dueDate } = req.body;
+    if (!dueDate) return res.status(400).json({ error: "Due date is required" });
+
+    const transaction = await LibraryTransaction.findById(transactionId);
+    if (!transaction) return res.status(404).json({ error: "Transaction not found" });
+    if (transaction.status === "Returned") return res.status(400).json({ error: "Cannot update due date after return" });
+
+    transaction.dueDate = new Date(dueDate);
+    transaction.status = new Date() > transaction.dueDate ? "Overdue" : "Issued";
+    if (transaction.status === "Issued") transaction.fineAmount = 0;
+    await transaction.save();
+
+    const populated = await LibraryTransaction.findById(transactionId)
+      .populate({ path: "bookId", select: "title author isbn" })
+      .populate({ path: "studentId", select: "rollNumber department year section userId", populate: { path: "userId", select: "name" } });
+
+    res.json({ message: "Due date updated successfully", transaction: populated });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 // ========================
 // GET STUDENTS FOR LIBRARY (with filters)
 // ========================

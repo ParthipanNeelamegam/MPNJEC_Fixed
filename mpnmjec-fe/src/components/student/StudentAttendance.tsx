@@ -1,4 +1,4 @@
-import { Home, User, BookOpen, Calendar as CalendarIcon, DollarSign, Send, Clock, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+import { Home, User, BookOpen, Calendar as CalendarIcon, DollarSign, Send, Clock, CheckCircle, XCircle, AlertCircle, Award } from 'lucide-react';
 import { Card } from '../ui/card';
 import { Progress } from '../ui/progress';
 import { Calendar } from '../ui/calendar';
@@ -18,6 +18,7 @@ const navItems = [
   { icon: BookOpen, label: 'Academics', path: '/student/academics' },
   { icon: CalendarIcon, label: 'Attendance', path: '/student/attendance' },
   { icon: DollarSign, label: 'Fees', path: '/student/fees' },
+  { icon: Award, label: 'Certificates', path: '/student/certificates' },
 ];
 
 type SubjectAttendance = {
@@ -331,4 +332,3 @@ export default function StudentAttendance() {
     </div>
   );
 }
-

@@ -12,6 +12,7 @@ import { Badge } from '../ui/badge';
 import { Progress } from '../ui/progress';
 import DesktopSidebar from '../shared/DesktopSidebar';
 import MobileNav from '../shared/MobileNav';
+import { toast } from 'sonner';
 
 const navItems = [
   { icon: Home, label: 'Dashboard', path: '/student/dashboard' },
@@ -19,6 +20,7 @@ const navItems = [
   { icon: BookOpen, label: 'Academics', path: '/student/academics' },
   { icon: Calendar, label: 'Attendance', path: '/student/attendance' },
   { icon: DollarSign, label: 'Fees', path: '/student/fees' },
+  { icon: Award, label: 'Certificates', path: '/student/certificates' },
 ];
 
 export default function StudentDashboard() {
@@ -67,6 +69,7 @@ export default function StudentDashboard() {
   const [performance, setPerformance] = useState<SubjectPerformance[]>([]);
   const [perfLoading, setPerfLoading] = useState<boolean>(true);
   const [perfError, setPerfError] = useState<string | null>(null);
+  const [bonafideLoading, setBonafideLoading] = useState(false);
 
   // Default metrics when data is not available
   const defaultMetrics: Metrics = {
@@ -135,10 +138,27 @@ export default function StudentDashboard() {
   // Use actual metrics or defaults for display
   const displayMetrics = metrics || defaultMetrics;
 
+  const handleBonafideRequest = async () => {
+    try {
+      setBonafideLoading(true);
+      await requestBonafideCertificate();
+      toast.success('Bonafide request submitted');
+      navigate('/student/certificates');
+    } catch (error: any) {
+      const message = error.response?.data?.error || 'Failed to submit bonafide request';
+      toast.error(message);
+      if (message.toLowerCase().includes('pending request')) {
+        navigate('/student/certificates');
+      }
+    } finally {
+      setBonafideLoading(false);
+    }
+  };
+
   // Quick Actions
   const quickActions = [
     { label: 'Pay Fees', icon: DollarSign, action: () => navigate('/student/fees'), gradient: 'from-green-500 to-emerald-600' },
-    { label: 'Request Bonafide', icon: Award, action: async () => { await requestBonafideCertificate(); }, gradient: 'from-blue-500 to-indigo-600' },
+    { label: bonafideLoading ? 'Requesting...' : 'Request Bonafide', icon: Award, action: handleBonafideRequest, gradient: 'from-blue-500 to-indigo-600', disabled: bonafideLoading },
     { label: 'View Marks', icon: BookOpen, action: () => navigate('/student/academics'), gradient: 'from-purple-500 to-pink-600' },
     { label: 'Attendance', icon: Calendar, action: () => navigate('/student/attendance'), gradient: 'from-orange-500 to-red-600' },
   ];
@@ -245,6 +265,7 @@ export default function StudentDashboard() {
                   <button
                     key={index}
                     onClick={action.action}
+                    disabled={(action as any).disabled}
                     className="flex flex-col items-center justify-center p-4 rounded-2xl bg-gradient-to-br from-gray-50 to-gray-100 hover:from-gray-100 hover:to-gray-200 transition-all group"
                   >
                     <div className={`w-14 h-14 bg-gradient-to-br ${action.gradient} rounded-2xl flex items-center justify-center mb-3 shadow-lg group-hover:scale-110 transition-transform`}>
