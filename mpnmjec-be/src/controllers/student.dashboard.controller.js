@@ -5,6 +5,7 @@ import Marks from "../models/Marks.js";
 import Fee from "../models/Fee.js";
 import Certificate from "../models/Certificate.js";
 import Notification from "../models/Notification.js";
+import LibraryTransaction from "../models/LibraryTransaction.js";
 import mongoose from "mongoose";
 
 // GET /api/student/dashboard/summary
@@ -58,6 +59,17 @@ export const getStudentDashboardSummary = async (req, res) => {
     // Pending certificate requests
     const pendingCertificates = await Certificate.countDocuments({ studentId, status: 'pending' });
 
+    const activeLibraryTransactions = await LibraryTransaction.find({
+      studentId,
+      status: { $in: ["Issued", "Overdue"] },
+    }).select("dueDate fineAmount status");
+    const today = new Date();
+    const libraryFine = activeLibraryTransactions.reduce((sum, transaction) => {
+      if (!transaction.dueDate || today <= transaction.dueDate) return sum + (transaction.fineAmount || 0);
+      const daysOverdue = Math.ceil((today - transaction.dueDate) / (1000 * 60 * 60 * 24));
+      return sum + Math.max(transaction.fineAmount || 0, daysOverdue * 5);
+    }, 0);
+
     // Recent notifications
     const notifications = await Notification.find({ userId }).sort({ createdAt: -1 }).limit(5);
 
@@ -85,6 +97,7 @@ export const getStudentDashboardSummary = async (req, res) => {
         pendingFees,
         cgpa: currentCGPA,
         pendingCertificates,
+        libraryFine,
       },
       notifications: notifications.map(n => ({
         _id: n._id,

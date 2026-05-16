@@ -1,4 +1,4 @@
-import { Home, User, BookOpen, Calendar, DollarSign, Award, Bell } from 'lucide-react';
+import { Home, User, BookOpen, Calendar, DollarSign, Award, Bell, Library } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import {
@@ -20,6 +20,7 @@ const navItems = [
   { icon: BookOpen, label: 'Academics', path: '/student/academics' },
   { icon: Calendar, label: 'Attendance', path: '/student/attendance' },
   { icon: DollarSign, label: 'Fees', path: '/student/fees' },
+  { icon: Library, label: 'Library', path: '/student/library' },
   { icon: Award, label: 'Certificates', path: '/student/certificates' },
 ];
 
@@ -44,6 +45,7 @@ export default function StudentDashboard() {
     pendingFees: number;
     currentCGPA: number;
     pendingCertificates: number;
+    libraryFine?: number;
   };
   type Notification = {
     title: string;
@@ -97,6 +99,7 @@ export default function StudentDashboard() {
             pendingFees: raw.pendingFees ?? 0,
             currentCGPA: raw.currentCGPA ?? raw.cgpa ?? 0,
             pendingCertificates: raw.pendingCertificates ?? 0,
+            libraryFine: raw.libraryFine ?? 0,
           });
         }
         // Use notifications from the summary response instead of separate endpoint
@@ -159,8 +162,8 @@ export default function StudentDashboard() {
   const quickActions = [
     { label: 'Pay Fees', icon: DollarSign, action: () => navigate('/student/fees'), gradient: 'from-green-500 to-emerald-600' },
     { label: bonafideLoading ? 'Requesting...' : 'Request Bonafide', icon: Award, action: handleBonafideRequest, gradient: 'from-blue-500 to-indigo-600', disabled: bonafideLoading },
+    { label: 'Library Card', icon: Library, action: () => navigate('/student/library'), gradient: 'from-cyan-500 to-blue-600' },
     { label: 'View Marks', icon: BookOpen, action: () => navigate('/student/academics'), gradient: 'from-purple-500 to-pink-600' },
-    { label: 'Attendance', icon: Calendar, action: () => navigate('/student/attendance'), gradient: 'from-orange-500 to-red-600' },
   ];
 
   return (
@@ -194,6 +197,11 @@ export default function StudentDashboard() {
         </header>
         {/* Main Content */}
         <main className="flex-1 overflow-y-auto p-4 md:p-6 pb-24 md:pb-6">
+          {(displayMetrics.libraryFine || 0) > 0 && (
+            <div className="mb-6 p-4 rounded-xl border border-red-200 bg-red-50 text-red-700 font-semibold">
+              Library fine pending: Rs.{Number(displayMetrics.libraryFine).toLocaleString('en-IN')}
+            </div>
+          )}
           {/* Stats Grid */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             {statsLoading ? (

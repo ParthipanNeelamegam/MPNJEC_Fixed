@@ -58,11 +58,18 @@ export default function AdminFees() {
   const [addingFee, setAddingFee] = useState(false);
   const [allStudents, setAllStudents] = useState<any[]>([]);
   const [addFeeData, setAddFeeData] = useState({
+    scope: 'student',
     studentId: '',
     academicYear: `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`,
     semester: '1',
-    totalAmount: '',
+    tuitionFee: '',
+    hostelFee: '',
+    bookFee: '',
+    otherFee: '',
+    department: 'all',
+    year: 'all',
     dueDate: '',
+    finePerDay: '',
   });
 
   // Record Payment dialog
@@ -132,22 +139,35 @@ export default function AdminFees() {
   };
 
   const handleAddFee = async () => {
-    if (!addFeeData.studentId || !addFeeData.totalAmount || !addFeeData.dueDate) {
-      toast.error('Student, total amount and due date are required');
+    const feeItems = [
+      { name: 'Tuition Fee', category: 'tuition', amount: Number(addFeeData.tuitionFee || 0) },
+      { name: 'Hostel Fee', category: 'hostel', amount: Number(addFeeData.hostelFee || 0) },
+      { name: 'Book Fee', category: 'book', amount: Number(addFeeData.bookFee || 0) },
+      { name: 'Other Fee', category: 'other', amount: Number(addFeeData.otherFee || 0) },
+    ].filter(item => item.amount > 0);
+    const totalAmount = feeItems.reduce((sum, item) => sum + item.amount, 0);
+
+    if ((addFeeData.scope === 'student' && !addFeeData.studentId) || totalAmount <= 0 || !addFeeData.dueDate) {
+      toast.error('Select scope, enter at least one fee amount, and choose a due date');
       return;
     }
     try {
       setAddingFee(true);
       await createFeeRecord({
-        studentId: addFeeData.studentId,
+        studentId: addFeeData.scope === 'student' ? addFeeData.studentId : '',
         academicYear: addFeeData.academicYear,
         semester: parseInt(addFeeData.semester),
-        totalAmount: parseFloat(addFeeData.totalAmount),
+        feeStructure: feeItems,
+        totalAmount,
         dueDate: addFeeData.dueDate,
+        finePerDay: Number(addFeeData.finePerDay || 0),
+        applyToAll: addFeeData.scope === 'global',
+        department: addFeeData.scope === 'global' && addFeeData.department !== 'all' ? addFeeData.department : undefined,
+        year: addFeeData.scope === 'global' && addFeeData.year !== 'all' ? Number(addFeeData.year) : undefined,
       });
-      toast.success('Fee record created successfully');
+      toast.success(addFeeData.scope === 'global' ? 'Global fees updated successfully' : 'Fee record created successfully');
       setShowAddFeeDialog(false);
-      setAddFeeData({ studentId: '', academicYear: `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`, semester: '1', totalAmount: '', dueDate: '' });
+      setAddFeeData({ scope: 'student', studentId: '', academicYear: `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`, semester: '1', tuitionFee: '', hostelFee: '', bookFee: '', otherFee: '', department: 'all', year: 'all', dueDate: '', finePerDay: '' });
       fetchData();
     } catch (err: any) {
       toast.error(err.response?.data?.error || 'Failed to create fee record');
@@ -482,11 +502,50 @@ export default function AdminFees() {
 
       {/* Add Fee Record Dialog */}
       <Dialog open={showAddFeeDialog} onOpenChange={setShowAddFeeDialog}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Add Fee Record</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            <div>
+              <Label>Update Scope</Label>
+              <Select value={addFeeData.scope} onValueChange={(v) => setAddFeeData({ ...addFeeData, scope: v })}>
+                <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="student">Single Student</SelectItem>
+                  <SelectItem value="global">Global Fee Update</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {addFeeData.scope === 'global' && (
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Department</Label>
+                  <Select value={addFeeData.department} onValueChange={(v) => setAddFeeData({ ...addFeeData, department: v })}>
+                    <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Departments</SelectItem>
+                      <SelectItem value="cse">CSE</SelectItem>
+                      <SelectItem value="ece">ECE</SelectItem>
+                      <SelectItem value="it">IT</SelectItem>
+                      <SelectItem value="eee">EEE</SelectItem>
+                      <SelectItem value="mech">Mechanical</SelectItem>
+                      <SelectItem value="civil">Civil</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Year</Label>
+                  <Select value={addFeeData.year} onValueChange={(v) => setAddFeeData({ ...addFeeData, year: v })}>
+                    <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Years</SelectItem>
+                      {[1,2,3,4].map(y => <SelectItem key={y} value={y.toString()}>Year {y}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
             <div>
               <Label>Student <span className="text-red-500">*</span></Label>
               <Select value={addFeeData.studentId} onValueChange={(v) => setAddFeeData({ ...addFeeData, studentId: v })}>
@@ -530,9 +589,39 @@ export default function AdminFees() {
                 <Input
                   type="number"
                   className="mt-1.5"
-                  value={addFeeData.totalAmount}
-                  onChange={(e) => setAddFeeData({ ...addFeeData, totalAmount: e.target.value })}
+                  value={addFeeData.tuitionFee}
+                  onChange={(e) => setAddFeeData({ ...addFeeData, tuitionFee: e.target.value })}
                   placeholder="50000"
+                />
+              </div>
+              <div>
+                <Label>Hostel Fee (Rs.)</Label>
+                <Input
+                  type="number"
+                  className="mt-1.5"
+                  value={addFeeData.hostelFee}
+                  onChange={(e) => setAddFeeData({ ...addFeeData, hostelFee: e.target.value })}
+                  placeholder="15000"
+                />
+              </div>
+              <div>
+                <Label>Book Fee (Rs.)</Label>
+                <Input
+                  type="number"
+                  className="mt-1.5"
+                  value={addFeeData.bookFee}
+                  onChange={(e) => setAddFeeData({ ...addFeeData, bookFee: e.target.value })}
+                  placeholder="5000"
+                />
+              </div>
+              <div>
+                <Label>Other Fee (Rs.)</Label>
+                <Input
+                  type="number"
+                  className="mt-1.5"
+                  value={addFeeData.otherFee}
+                  onChange={(e) => setAddFeeData({ ...addFeeData, otherFee: e.target.value })}
+                  placeholder="0"
                 />
               </div>
               <div>
@@ -542,6 +631,16 @@ export default function AdminFees() {
                   className="mt-1.5"
                   value={addFeeData.dueDate}
                   onChange={(e) => setAddFeeData({ ...addFeeData, dueDate: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label>Fine Per Day (Rs.)</Label>
+                <Input
+                  type="number"
+                  className="mt-1.5"
+                  value={addFeeData.finePerDay}
+                  onChange={(e) => setAddFeeData({ ...addFeeData, finePerDay: e.target.value })}
+                  placeholder="0"
                 />
               </div>
             </div>

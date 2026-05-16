@@ -8,6 +8,7 @@ import Material from "../models/Material.js";
 import LeaveRequest from "../models/LeaveRequest.js";
 import Course from "../models/Course.js";
 import Notification from "../models/Notification.js";
+import LibraryTransaction from "../models/LibraryTransaction.js";
 import mongoose from "mongoose";
 
 const INSTITUTION_NAME = process.env.INSTITUTION_NAME || "MPNMJEC";
@@ -438,10 +439,16 @@ export const getFeeReceipt = async (req, res) => {
     const student = await Student.findOne({ userId }).populate('userId', 'name');
     if (!student) return res.status(404).json({ error: 'Student profile not found' });
 
-    const fee = await Fee.findOne({ studentId: student._id });
+    const fee = await Fee.findOne({
+      studentId: student._id,
+      $or: [
+        ...(mongoose.Types.ObjectId.isValid(id) ? [{ "payments._id": id }] : []),
+        { "payments.receiptNumber": id },
+      ],
+    });
     if (!fee) return res.status(404).json({ error: 'Fee record not found' });
 
-    const payment = fee.payments?.find(p => p._id.toString() === id);
+    const payment = fee.payments?.find(p => p._id.toString() === id || p.receiptNumber === id);
     if (!payment) return res.status(404).json({ error: 'Receipt not found' });
 
     const user = await User.findById(userId);
@@ -653,13 +660,13 @@ export const downloadMaterial = async (req, res) => {
 // ========================
 
 const CERTIFICATE_TYPES = [
-  { id: "bonafide", name: "Bonafide Certificate", fee: 100, processingTime: "3-5 days" },
-  { id: "characterCertificate", name: "Character Certificate", fee: 100, processingTime: "3-5 days" },
-  { id: "conductCertificate", name: "Conduct Certificate", fee: 100, processingTime: "3-5 days" },
-  { id: "studyCertificate", name: "Study Certificate", fee: 150, processingTime: "5-7 days" },
-  { id: "courseCompletion", name: "Course Completion Certificate", fee: 200, processingTime: "7-10 days" },
-  { id: "migration", name: "Migration Certificate", fee: 500, processingTime: "10-15 days" },
-  { id: "transferCertificate", name: "Transfer Certificate", fee: 300, processingTime: "7-10 days" },
+  { id: "bonafide", name: "Bonafide Certificate", fee: 0, processingTime: "3-5 days" },
+  { id: "characterCertificate", name: "Character Certificate", fee: 0, processingTime: "3-5 days" },
+  { id: "conductCertificate", name: "Conduct Certificate", fee: 0, processingTime: "3-5 days" },
+  { id: "studyCertificate", name: "Study Certificate", fee: 0, processingTime: "5-7 days" },
+  { id: "courseCompletion", name: "Course Completion Certificate", fee: 0, processingTime: "7-10 days" },
+  { id: "migration", name: "Migration Certificate", fee: 0, processingTime: "10-15 days" },
+  { id: "transferCertificate", name: "Transfer Certificate", fee: 0, processingTime: "7-10 days" },
 ];
 
 // GET /api/student/certificates/types
@@ -730,7 +737,8 @@ export const applyCertificate = async (req, res) => {
       typeName: certType.name,
       purpose: purpose.trim(),
       copies: Math.min(Math.max(copies, 1), 5),
-      fee: certType.fee * copies,
+      fee: 0,
+      isPaid: true,
     });
 
     await Notification.create({
@@ -791,8 +799,62 @@ export const payCertificateFee = async (req, res) => {
   }
 };
 
-// GET /api/student/certificates/:certificateNumber/download
-export const downloadCertificate = async (req, res) => {
+// GET /api/student/library - Get current student's library card details
+export const getStudentLibraryCard = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const student = await Student.findOne({ userId }).populate("userId", "name email");
+    if (!student) return res.status(404).json({ error: "Student profile not found" });
+
+    const now = new Date();
+    const transactions = await LibraryTransaction.find({
+      studentId: student._id,
+      status: { $in: ["Issued", "Overdue"] },
+    })
+      .sort({ dueDate: 1 })
+      .populate({ path: "bookId", select: "title author isbn category" });
+
+    let totalFine = 0;
+    const borrowedBooks = transactions.map((transaction) => {
+      const isOverdue = transaction.dueDate && now > transaction.dueDate;
+      const daysOverdue = isOverdue
+        ? Math.ceil((now - transaction.dueDate) / (1000 * 60 * 60 * 24))
+        : 0;
+      const fineAmount = isOverdue
+        ? Math.max(transaction.fineAmount || 0, daysOverdue * 5)
+        : transaction.fineAmount || 0;
+      totalFine += fineAmount;
+
+      return {
+        id: transaction._id,
+        title: transaction.bookId?.title || "Unknown book",
+        author: transaction.bookId?.author || "-",
+        isbn: transaction.bookId?.isbn || "-",
+        category: transaction.bookId?.category || "-",
+        issueDate: transaction.issueDate,
+        dueDate: transaction.dueDate,
+        status: isOverdue ? "Overdue" : transaction.status,
+        fineAmount,
+      };
+    });
+
+    res.json({
+      libraryCard: {
+        studentName: student.userId?.name || "Student",
+        rollNumber: student.rollNumber,
+        libraryCardsTotal: student.libraryCardsTotal || 0,
+        libraryCardsAvailable: student.libraryCardsAvailable || 0,
+        borrowedCount: borrowedBooks.length,
+        totalFine,
+        borrowedBooks,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Failed to fetch library card details" });
+  }
+};
+
+const sendCertificatePdf = async (req, res, disposition = "attachment") => {
   try {
     const { certificateNumber } = req.params;
     const lookup = [{ certificateNumber }];
@@ -821,10 +883,20 @@ export const downloadCertificate = async (req, res) => {
     const fileName = sanitizeFileName(`${certificate.typeName}_${certificate.certificateNumber}`) || "certificate";
 
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `attachment; filename="${fileName}.pdf"`);
+    res.setHeader("Content-Disposition", `${disposition}; filename="${fileName}.pdf"`);
     res.setHeader("Content-Length", pdf.length);
     res.send(pdf);
   } catch(e) {
-    res.status(500).send("Failed to download certificate");
+    res.status(500).send("Failed to load certificate");
   }
+};
+
+// GET /api/student/certificates/:certificateNumber/view
+export const viewCertificate = async (req, res) => {
+  return sendCertificatePdf(req, res, "inline");
+};
+
+// GET /api/student/certificates/:certificateNumber/download
+export const downloadCertificate = async (req, res) => {
+  return sendCertificatePdf(req, res, "attachment");
 };

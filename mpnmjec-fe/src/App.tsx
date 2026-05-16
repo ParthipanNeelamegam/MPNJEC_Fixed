@@ -19,6 +19,7 @@ import StudentAssignments from '../src/components/student/StudentAssignments';
 import StudentCirculars from '../src/components/student/StudentCirculars';
 import StudentReceipt from '../src/components/student/StudentReceipt';
 import StudentLeave from '../src/components/student/StudentLeave';
+import StudentLibrary from '../src/components/student/StudentLibrary';
 
 // Faculty
 import FacultyDashboard from '../src/components/faculty/FacultyDashboard';
@@ -91,6 +92,7 @@ export default function App() {
             <Route path="/student/circulars" element={<StudentCirculars />} />
             <Route path="/student/receipt/:id" element={<StudentReceipt />} />
             <Route path="/student/leave" element={<StudentLeave />} />
+            <Route path="/student/library" element={<StudentLibrary />} />
           </Route>
           
           {/* Faculty Routes - Protected */}

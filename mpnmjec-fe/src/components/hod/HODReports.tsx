@@ -5,6 +5,7 @@ import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../ui/dropdown-menu';
 import DesktopSidebar from '../shared/DesktopSidebar';
 import MobileNav from '../shared/MobileNav';
 import { toast } from 'sonner';
@@ -43,6 +44,8 @@ const createReportFileName = (title?: string) => {
   const base = title || 'report';
   return `${base.replace(/[^a-z0-9-_]+/gi, '_').replace(/^_+|_+$/g, '') || 'report'}.pdf`;
 };
+
+const createWordFileName = (title?: string) => createReportFileName(title).replace(/\.pdf$/, '.doc');
 
 const cleanPdfText = (value: unknown) => String(value ?? '-')
   .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, '')
@@ -211,6 +214,104 @@ const createPdfBlob = (report: any) => {
   return new Blob([pdf], { type: 'application/pdf' });
 };
 
+const createWordBlob = (report: any) => {
+  const rows = buildReportLines(report)
+    .map(line => `<p>${cleanPdfText(line).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') || '&nbsp;'}</p>`)
+    .join('');
+  const html = `<!doctype html><html><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;color:#111827}h1{font-size:24px}.meta{color:#4b5563}p{margin:4px 0;line-height:1.4}</style></head><body><h1>${cleanPdfText(report.title || 'Department Report')}</h1><div class="meta">${cleanPdfText(getReportLabel(report.type))} | Year ${cleanPdfText(report.year || 'All')} | Section ${cleanPdfText(report.section || 'All')}</div>${rows}</body></html>`;
+  return new Blob([html], { type: 'application/msword' });
+};
+
+const downloadBlob = (blob: Blob, fileName: string) => {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+};
+
+const renderValue = (value: any): string => {
+  if (value === null || value === undefined || value === '') return '-';
+  if (typeof value === 'number') return value.toLocaleString('en-IN');
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (typeof value === 'string' && !Number.isNaN(Date.parse(value)) && value.includes('T')) return formatReportDate(value);
+  return String(value);
+};
+
+const titleCase = (value: string) => value
+  .replace(/([A-Z])/g, ' $1')
+  .replace(/[_-]+/g, ' ')
+  .replace(/\b\w/g, letter => letter.toUpperCase());
+
+const ReportSection = ({ title, value }: { title: string; value: any }) => {
+  if (Array.isArray(value)) {
+    if (!value.length) {
+      return (
+        <div className="rounded-lg border border-gray-200 p-4">
+          <h3 className="font-bold text-gray-900 mb-2">{titleCase(title)}</h3>
+          <p className="text-sm text-gray-500">No records available</p>
+        </div>
+      );
+    }
+
+    const columns = Object.keys(value.find(item => item && typeof item === 'object') || {}).slice(0, 8);
+    return (
+      <div className="rounded-lg border border-gray-200 overflow-hidden">
+        <div className="px-4 py-3 bg-gray-50 font-bold text-gray-900">{titleCase(title)}</div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-white border-b border-gray-200">
+              <tr>{columns.map(column => <th key={column} className="text-left p-3 font-semibold text-gray-700">{titleCase(column)}</th>)}</tr>
+            </thead>
+            <tbody>
+              {value.map((row, index) => (
+                <tr key={index} className="border-b border-gray-100">
+                  {columns.map(column => <td key={column} className="p-3 text-gray-700">{typeof row?.[column] === 'object' ? JSON.stringify(row[column]) : renderValue(row?.[column])}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value);
+    const primitiveEntries = entries.filter(([, entry]) => !entry || typeof entry !== 'object');
+    const nestedEntries = entries.filter(([, entry]) => entry && typeof entry === 'object');
+
+    return (
+      <div className="space-y-4">
+        {primitiveEntries.length > 0 && (
+          <div className="rounded-lg border border-gray-200 p-4">
+            <h3 className="font-bold text-gray-900 mb-3">{titleCase(title)}</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {primitiveEntries.map(([key, entry]) => (
+                <div key={key} className="p-3 bg-gray-50 rounded-lg">
+                  <div className="text-xs text-gray-500">{titleCase(key)}</div>
+                  <div className="font-bold text-gray-900">{renderValue(entry)}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {nestedEntries.map(([key, entry]) => <ReportSection key={key} title={key} value={entry} />)}
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-gray-200 p-4">
+      <h3 className="font-bold text-gray-900 mb-2">{titleCase(title)}</h3>
+      <p className="text-sm text-gray-700">{renderValue(value)}</p>
+    </div>
+  );
+};
+
 export default function HODReports() {
   const [typeFilter, setTypeFilter] = useState('all');
   const [classFilter, setClassFilter] = useState('all');
@@ -269,19 +370,15 @@ export default function HODReports() {
     }
   };
 
-  const handleDownload = async (id: string) => {
+  const handleDownload = async (id: string, format: 'pdf' | 'word' = 'pdf') => {
     try {
       const report = await loadReport(id);
-      const blob = createPdfBlob(report);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = createReportFileName(report.title);
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      toast.success('Report downloaded');
+      if (format === 'word') {
+        downloadBlob(createWordBlob(report), createWordFileName(report.title));
+      } else {
+        downloadBlob(createPdfBlob(report), createReportFileName(report.title));
+      }
+      toast.success(`${format === 'word' ? 'Word' : 'PDF'} report downloaded`);
     } catch {
       toast.error('Failed to download report');
     }
@@ -290,8 +387,9 @@ export default function HODReports() {
   const handleGenerateReport = async () => {
     try {
       const reportType = typeFilter === 'all' ? 'attendance' : typeFilter as (typeof reportTypes)[number]['value'];
+      const selectedYear = classFilter === 'all' ? undefined : Number(classFilter.replace('Year ', ''));
       setGenerating(true);
-      await generateReport({ type: reportType });
+      await generateReport({ type: reportType, year: selectedYear });
       toast.success(`${getReportLabel(reportType)} report generated`);
       await fetchReports();
     } catch {
@@ -435,14 +533,18 @@ export default function HODReports() {
                         <Eye className="w-4 h-4 md:mr-2" />
                         <span className="hidden md:inline">View</span>
                       </Button>
-                      <Button
-                        size="sm"
-                        className="bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700"
-                        onClick={() => handleDownload(report.id)}
-                      >
-                        <Download className="w-4 h-4 md:mr-2" />
-                        <span className="hidden md:inline">Download</span>
-                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button size="sm" className="bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700">
+                            <Download className="w-4 h-4 md:mr-2" />
+                            <span className="hidden md:inline">Download</span>
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => handleDownload(report.id, 'pdf')}>PDF Document</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleDownload(report.id, 'word')}>Word Document</DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </div>
                 </div>
@@ -484,14 +586,26 @@ export default function HODReports() {
                   <div className="font-medium">{viewingReport.section || 'All'}</div>
                 </div>
               </div>
-              <pre className="bg-gray-950 text-gray-100 rounded-lg p-4 text-xs overflow-auto">
-                {JSON.stringify(viewingReport.data || {}, null, 2)}
-              </pre>
+              <div className="rounded-xl border border-gray-200 bg-white p-5">
+                <div className="mb-5 border-b border-gray-200 pb-4">
+                  <h2 className="text-2xl font-bold text-gray-900">MPNMJEC Department Report</h2>
+                  <p className="text-sm text-gray-600">Generated on {formatReportDate(viewingReport.createdAt)}</p>
+                </div>
+                <ReportSection title="Report Data" value={viewingReport.data || {}} />
+              </div>
               <div className="flex justify-end">
-                <Button onClick={() => handleDownload(viewingReport._id)} className="bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700">
-                  <Download className="w-4 h-4 mr-2" />
-                  Download
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button className="bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700">
+                      <Download className="w-4 h-4 mr-2" />
+                      Download
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => handleDownload(viewingReport._id, 'pdf')}>PDF Document</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleDownload(viewingReport._id, 'word')}>Word Document</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </div>
           )}

@@ -3,7 +3,7 @@ import { Home, User, BookOpen, Calendar, DollarSign, Award, Download, Loader2 } 
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import DesktopSidebar from '../shared/DesktopSidebar';
@@ -26,6 +26,7 @@ interface CertificateRequest {
   date?: string;
   status: string;
   ref?: string;
+  purpose?: string;
   certificateNumber?: string;
   appliedAt?: string;
 }
@@ -44,6 +45,8 @@ export default function StudentCertificates() {
   const [certificateTypes, setCertificateTypes] = useState<CertificateType[]>([]);
   const [myRequests, setMyRequests] = useState<CertificateRequest[]>([]);
   const [purpose, setPurpose] = useState('');
+  const [selectedCertificate, setSelectedCertificate] = useState<CertificateType | null>(null);
+  const [viewRequest, setViewRequest] = useState<CertificateRequest | null>(null);
   const apiBaseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
   const fetchData = async () => {
@@ -83,6 +86,7 @@ export default function StudentCertificates() {
       await applyCertificate({ type: typeId, purpose });
       toast.success('Certificate request submitted');
       setPurpose('');
+      setSelectedCertificate(null);
       fetchData();
     } catch (error: any) {
       toast.error(error.response?.data?.error || 'Failed to submit request');
@@ -126,33 +130,17 @@ export default function StudentCertificates() {
                 <h3 className="text-xl font-bold text-gray-900 mb-2">{cert.name}</h3>
                 <p className="text-gray-600 mb-4">{cert.description || 'Submit a request and download the approved certificate as PDF.'}</p>
                 <div className="flex items-center justify-between gap-4">
-                  <span className="text-2xl font-bold text-gray-900">Rs.{cert.fee}</span>
-                  <Dialog>
-                    <DialogTrigger asChild>
-                      <Button className="bg-gradient-to-r from-blue-600 to-indigo-600">
-                        Request
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>Request {cert.name}</DialogTitle>
-                      </DialogHeader>
-                      <div className="space-y-4 py-4">
-                        <div>
-                          <Label>Purpose</Label>
-                          <Textarea
-                            placeholder="Enter purpose for certificate"
-                            className="mt-2"
-                            value={purpose}
-                            onChange={(e) => setPurpose(e.target.value)}
-                          />
-                        </div>
-                        <Button className="w-full" onClick={() => handleApply(cert.id)}>
-                          Submit Request
-                        </Button>
-                      </div>
-                    </DialogContent>
-                  </Dialog>
+                  <Badge className="bg-green-100 text-green-700">No fee required</Badge>
+                  <Button
+                    type="button"
+                    className="bg-gradient-to-r from-blue-600 to-indigo-600"
+                    onClick={() => {
+                      setPurpose('');
+                      setSelectedCertificate(cert);
+                    }}
+                  >
+                    Request
+                  </Button>
                 </div>
               </Card>
             ))}
@@ -174,7 +162,12 @@ export default function StudentCertificates() {
                     : 'bg-amber-100 text-amber-700';
 
                 return (
-                  <div key={req.id || index} className="p-4 bg-gray-50 rounded-xl flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div
+                    key={req.id || index}
+                    className={`p-4 bg-gray-50 rounded-xl flex flex-col gap-3 md:flex-row md:items-center md:justify-between ${canDownload ? 'cursor-pointer hover:bg-gray-100 transition-colors' : ''}`}
+                    onClick={() => canDownload && setViewRequest(req)}
+                    title={canDownload ? 'Click to view certificate' : undefined}
+                  >
                     <div>
                       <h3 className="font-bold text-gray-900">{req.typeName || req.type}</h3>
                       <p className="text-sm text-gray-600">
@@ -186,7 +179,7 @@ export default function StudentCertificates() {
                         {req.status?.charAt(0).toUpperCase() + req.status?.slice(1)}
                       </Badge>
                       {canDownload && (
-                        <Button size="sm" onClick={() => openCertificatePdf(req)}>
+                        <Button size="sm" onClick={(event) => { event.stopPropagation(); openCertificatePdf(req); }}>
                           <Download className="w-4 h-4 mr-2" />
                           Download
                         </Button>
@@ -200,6 +193,77 @@ export default function StudentCertificates() {
         </main>
         <MobileNav items={navItems} />
       </div>
+      <Dialog open={!!selectedCertificate} onOpenChange={(open) => !open && setSelectedCertificate(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Request {selectedCertificate?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <Label>Purpose</Label>
+              <Textarea
+                placeholder="Enter purpose for certificate"
+                className="mt-2"
+                value={purpose}
+                onChange={(e) => setPurpose(e.target.value)}
+              />
+            </div>
+            <Button
+              className="w-full"
+              onClick={() => selectedCertificate && handleApply(selectedCertificate.id)}
+            >
+              Submit Request
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={!!viewRequest} onOpenChange={(open) => !open && setViewRequest(null)}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{viewRequest?.typeName || viewRequest?.type || 'Certificate'}</DialogTitle>
+          </DialogHeader>
+          {viewRequest && (
+            <div className="bg-white border-2 border-gray-900 rounded-sm p-8 md:p-10 text-gray-900">
+              <div className="text-center border-b border-gray-300 pb-5 mb-8">
+                <h2 className="text-2xl font-bold uppercase tracking-wide">{viewRequest.typeName || viewRequest.type}</h2>
+                <p className="text-sm text-gray-600 mt-2">Certificate No: {viewRequest.certificateNumber || viewRequest.ref || viewRequest.id || '-'}</p>
+              </div>
+
+              <div className="space-y-6 text-base leading-8">
+                <p>
+                  This is to certify that the student has requested a <strong>{viewRequest.typeName || viewRequest.type}</strong>
+                  {viewRequest.purpose ? ` for the purpose of ${viewRequest.purpose}` : ' for official use'}.
+                </p>
+                <p>
+                  The request status is <strong>{viewRequest.status.charAt(0).toUpperCase() + viewRequest.status.slice(1)}</strong>
+                  {viewRequest.appliedAt || viewRequest.date ? ` and was applied on ${viewRequest.appliedAt ? new Date(viewRequest.appliedAt).toLocaleDateString('en-IN') : viewRequest.date}` : ''}.
+                </p>
+                <p>
+                  This certificate is issued by MPNMJEC for student record and verification purposes.
+                </p>
+              </div>
+
+              <div className="mt-16 flex justify-between items-end text-sm">
+                <div>
+                  <p>Date: {new Date().toLocaleDateString('en-IN')}</p>
+                  <p>Place: Campus</p>
+                </div>
+                <div className="text-center">
+                  <div className="border-b border-gray-500 w-48 mb-2" />
+                  <p className="font-semibold">Principal / Head of Institution</p>
+                </div>
+              </div>
+
+              <div className="mt-6 flex justify-end print:hidden">
+                <Button onClick={(event) => { event.stopPropagation(); openCertificatePdf(viewRequest); }}>
+                  <Download className="w-4 h-4 mr-2" />
+                  Download PDF
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

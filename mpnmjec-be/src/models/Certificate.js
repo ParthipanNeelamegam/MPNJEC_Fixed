@@ -27,11 +27,11 @@ const certificateSchema = new mongoose.Schema({
   },
   fee: {
     type: Number,
-    default: 100,
+    default: 0,
   },
   isPaid: {
     type: Boolean,
-    default: false,
+    default: true,
   },
   status: {
     type: String,

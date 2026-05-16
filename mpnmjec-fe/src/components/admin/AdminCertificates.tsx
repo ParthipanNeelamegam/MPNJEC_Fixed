@@ -80,8 +80,8 @@ export default function AdminCertificates() {
         status: (c.status || 'pending').toLowerCase(),
         purpose: c.purpose || '-',
         copies: c.copies || 1,
-        fee: c.fee || 0,
-        isPaid: c.isPaid || false,
+        fee: 0,
+        isPaid: true,
         remarks: c.remarks || '',
         certificateNumber: c.certificateNumber || '',
       })));
@@ -231,7 +231,7 @@ export default function AdminCertificates() {
                         <th className="text-left py-4 px-4 font-semibold text-gray-900">Type</th>
                         <th className="text-left py-4 px-4 font-semibold text-gray-900">Purpose</th>
                         <th className="text-left py-4 px-4 font-semibold text-gray-900">Date</th>
-                        <th className="text-left py-4 px-4 font-semibold text-gray-900">Fee</th>
+                        <th className="text-left py-4 px-4 font-semibold text-gray-900">Charge</th>
                         <th className="text-left py-4 px-4 font-semibold text-gray-900">Status</th>
                         <th className="text-left py-4 px-4 font-semibold text-gray-900">Actions</th>
                       </tr>
@@ -250,9 +250,7 @@ export default function AdminCertificates() {
                           <td className="py-4 px-4 text-sm text-gray-600 max-w-[180px] truncate">{cert.purpose}</td>
                           <td className="py-4 px-4 text-sm text-gray-600">{cert.requestDate}</td>
                           <td className="py-4 px-4 text-sm">
-                            <span className={cert.isPaid ? 'text-green-600 font-semibold' : 'text-amber-600'}>
-                              ₹{cert.fee} {cert.isPaid ? '✓' : '(unpaid)'}
-                            </span>
+                            <span className="text-green-600 font-semibold">Free</span>
                           </td>
                           <td className="py-4 px-4">
                             <Badge className={STATUS_COLORS[cert.status] || 'bg-gray-100 text-gray-700'}>
@@ -341,10 +339,8 @@ export default function AdminCertificates() {
                         <div className="text-sm font-medium">{cert.typeName}</div>
                       </div>
                       <div className="p-3 bg-gray-50 rounded-xl">
-                        <div className="text-xs text-gray-600 mb-1">Fee</div>
-                        <div className={`text-sm font-semibold ${cert.isPaid ? 'text-green-600' : 'text-amber-600'}`}>
-                          ₹{cert.fee} {cert.isPaid ? '✓' : '(unpaid)'}
-                        </div>
+                        <div className="text-xs text-gray-600 mb-1">Charge</div>
+                        <div className="text-sm font-semibold text-green-600">Free</div>
                       </div>
                     </div>
                     <div className="p-3 bg-gray-50 rounded-xl mb-3">
@@ -439,10 +435,8 @@ export default function AdminCertificates() {
                 <span>{viewCert.copies}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-500">Fee</span>
-                <span className={viewCert.isPaid ? 'text-green-600 font-semibold' : 'text-amber-600'}>
-                  ₹{viewCert.fee} {viewCert.isPaid ? '(Paid)' : '(Unpaid)'}
-                </span>
+                <span className="text-sm text-gray-500">Charge</span>
+                <span className="text-green-600 font-semibold">Free</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-gray-500">Status</span>

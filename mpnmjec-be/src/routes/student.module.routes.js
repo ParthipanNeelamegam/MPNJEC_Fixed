@@ -19,7 +19,9 @@ import {
   applyCertificate,
   requestBonafideCertificate,
   payCertificateFee,
+  viewCertificate,
   downloadCertificate,
+  getStudentLibraryCard,
 } from "../controllers/student.module.controller.js";
 
 const router = express.Router();
@@ -33,6 +35,8 @@ router.get("/fees/history", authenticate, getStudentFeesHistory);
 router.get("/fees/structure", authenticate, getFeeStructure);
 router.get("/fees/receipt/:id", authenticate, getFeeReceipt);
 router.post("/fees/pay", authenticate, payStudentFees);
+
+router.get("/library", authenticate, getStudentLibraryCard);
 
 // Leave routes
 router.post("/leave", authenticate, applyLeave);
@@ -48,6 +52,7 @@ router.get("/certificates", authenticate, getStudentCertificates);
 router.post("/certificates", authenticate, applyCertificate);
 router.post("/certificates/request", authenticate, requestBonafideCertificate);
 router.post("/certificates/:id/pay", authenticate, payCertificateFee);
+router.get("/certificates/:certificateNumber/view", viewCertificate);
 router.get("/certificates/:certificateNumber/download", downloadCertificate);
 
 export default router;
