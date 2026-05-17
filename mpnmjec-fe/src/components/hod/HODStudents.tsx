@@ -114,6 +114,52 @@ export default function HODStudents() {
     }
   };
 
+  // Grade points mapping
+  const gradePointsMap: Record<string, number> = {
+    O: 10,
+    'A+': 9,
+    A: 8,
+    B: 7,
+    C: 6,
+    F: 0,
+  };
+
+  // Compute subject-wise CGPA (weighted by credits) for the studentDetail
+  const computeSubjectStats = (detail: StudentDeepView | null) => {
+    if (!detail) return [] as any[];
+    const map: Record<string, any> = {};
+    const sems = detail.marks.bySemester || {} as any;
+    Object.values(sems).forEach((subjects: any[]) => {
+      subjects.forEach((s: any) => {
+        const key = String(s.courseId || s.courseCode || s.courseName || Math.random());
+        const gp = gradePointsMap[s.grade] ?? 0;
+        const credits = s.credits || 3;
+        if (!map[key]) {
+          map[key] = {
+            courseId: s.courseId,
+            courseName: s.courseName,
+            courseCode: s.courseCode,
+            totalCredits: 0,
+            totalWeight: 0,
+            attempts: 0,
+            latestGrade: s.grade,
+          };
+        }
+        map[key].totalCredits += credits;
+        map[key].totalWeight += gp * credits;
+        map[key].attempts += 1;
+        map[key].latestGrade = s.grade;
+      });
+    });
+
+    const arr = Object.values(map).map((v: any) => ({
+      ...v,
+      subjectGpa: v.totalCredits ? (v.totalWeight / v.totalCredits) : 0,
+    }));
+    arr.sort((a: any, b: any) => b.subjectGpa - a.subjectGpa);
+    return arr;
+  };
+
   return (
     <div className="flex h-screen overflow-hidden">
       <DesktopSidebar items={navItems} title="HOD Portal" subtitle="CSE Department" />
@@ -525,20 +571,50 @@ export default function HODStudents() {
                   </Card>
                 </div>
 
-                {/* Semester GPA Chart */}
+                {/* Semester GPA + Subject-wise CGPA */}
                 <Card className="p-4 mt-4">
-                  <h3 className="font-semibold text-gray-900 mb-3">Semester-wise GPA</h3>
-                  <div className="flex items-end gap-2 h-32">
-                    {Object.entries(studentDetail.marks.semesterGPA).map(([sem, gpa]) => (
-                      <div key={sem} className="flex-1 flex flex-col items-center">
-                        <div 
-                          className="w-full bg-gradient-to-t from-blue-500 to-indigo-500 rounded-t-lg"
-                          style={{ height: `${(gpa / 10) * 100}%` }}
-                        ></div>
-                        <div className="text-xs mt-1 text-gray-600">S{sem}</div>
-                        <div className="text-xs font-semibold text-gray-900">{gpa.toFixed(1)}</div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <h3 className="font-semibold text-gray-900 mb-3">Semester-wise GPA</h3>
+                      <div className="flex items-end gap-2 h-32">
+                        {Object.entries(studentDetail.marks.semesterGPA).map(([sem, gpa]) => (
+                          <div key={sem} className="flex-1 flex flex-col items-center">
+                            <div 
+                              className="w-full bg-gradient-to-t from-blue-500 to-indigo-500 rounded-t-lg"
+                              style={{ height: `${(gpa / 10) * 100}%` }}
+                            ></div>
+                            <div className="text-xs mt-1 text-gray-600">S{sem}</div>
+                            <div className="text-xs font-semibold text-gray-900">{gpa.toFixed(1)}</div>
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    </div>
+
+                    <div>
+                      <h3 className="font-semibold text-gray-900 mb-3">Subject-wise CGPA</h3>
+                      {(() => {
+                        const subjectStats = computeSubjectStats(studentDetail);
+                        if (!subjectStats || subjectStats.length === 0) {
+                          return <p className="text-gray-500">No subject data available</p>;
+                        }
+                        return (
+                          <div className="space-y-3 max-h-48 overflow-y-auto">
+                            {subjectStats.map((subj: any) => (
+                              <div key={subj.courseId || subj.courseCode} className="p-3 bg-gray-50 rounded-lg flex items-center justify-between">
+                                <div>
+                                  <div className="font-medium text-gray-900">{subj.courseName}</div>
+                                  <div className="text-xs text-gray-600">{subj.courseCode}</div>
+                                </div>
+                                <div className="text-right">
+                                  <div className="text-lg font-semibold">{subj.subjectGpa.toFixed(2)}</div>
+                                  <div className="text-xs text-gray-600">Grade: {subj.latestGrade || 'N/A'}</div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
+                    </div>
                   </div>
                 </Card>
               </TabsContent>

@@ -16,6 +16,7 @@ import advisorRoutes from "./routes/advisor.routes.js";
 import leaveRoutes from "./routes/leave.routes.js";
 import resultAnalysisRoutes from "./routes/resultAnalysis.routes.js";
 import libraryRoutes from "./routes/library.routes.js";
+import materialRoutes from "./routes/material.routes.js";
 
 const app = express();
 
@@ -83,6 +84,9 @@ app.use("/api/result-analysis", resultAnalysisRoutes);
 
 // Library routes (librarian only)
 app.use("/api/library", libraryRoutes);
+
+// Public materials download route (serves files by material id)
+app.use('/api/materials', materialRoutes);
 
 
 export default app;

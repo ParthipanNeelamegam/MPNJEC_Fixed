@@ -21,6 +21,26 @@ import {
   logSchedulingConflict,
 } from "../utils/scheduling.js";
 
+// Helper to build a case-insensitive department filter for queries
+const makeDeptFilter = (dept) => {
+  if (!dept) return undefined;
+  return { $regex: new RegExp(`^${dept}$`, 'i') };
+};
+
+// Case-insensitive equality check for department strings
+const isSameDept = (a, b) => {
+  if (!a || !b) return false;
+  return String(a).toLowerCase() === String(b).toLowerCase();
+};
+
+// Check if faculty (primary or secondary) belongs to a department
+const facultyBelongsTo = (faculty, hodDept) => {
+  if (!faculty || !hodDept) return false;
+  if (isSameDept(faculty.department, hodDept)) return true;
+  const secs = faculty.secondaryDepartments || [];
+  return secs.map(s => String(s || '').toLowerCase()).includes(String(hodDept).toLowerCase());
+};
+
 // ========================
 // DEPARTMENT USERS
 // ========================
@@ -35,7 +55,8 @@ export const getDepartmentFaculty = async (req, res) => {
       return res.status(404).json({ error: "HOD profile not found" });
     }
 
-    const faculty = await Faculty.find({ department: hod.department })
+    const deptQ = makeDeptFilter(hod.department);
+    const faculty = await Faculty.find({ department: deptQ })
       .populate("userId", "name email")
       .populate("assignedCourses", "code name");
 
@@ -81,15 +102,14 @@ export const getFacultyDetails = async (req, res) => {
     }
 
     // Verify faculty belongs to HOD's department or secondary departments
-    if (faculty.department !== hod.department && 
-        !faculty.secondaryDepartments?.includes(hod.department)) {
+    if (!facultyBelongsTo(faculty, hod.department)) {
       return res.status(403).json({ error: "Faculty not in your department" });
     }
 
     // Get timetable entries count for workload calculation
     const timetableEntries = await TimeTable.countDocuments({
       faculty: faculty._id,
-      department: hod.department,
+      department: makeDeptFilter(hod.department),
       isActive: true,
     });
 
@@ -143,8 +163,7 @@ export const getFacultySchedule = async (req, res) => {
     }
 
     // Verify faculty belongs to HOD's department or secondary departments
-    if (faculty.department !== hod.department && 
-        !faculty.secondaryDepartments?.includes(hod.department)) {
+    if (!facultyBelongsTo(faculty, hod.department)) {
       return res.status(403).json({ error: "Faculty not in your department" });
     }
 
@@ -202,7 +221,9 @@ export const getDepartmentStudents = async (req, res) => {
       return res.status(404).json({ error: "HOD profile not found" });
     }
 
-    const filter = { department: hod.department, status: 'active' };
+    const deptQ = makeDeptFilter(hod.department);
+    const filter = { status: 'active' };
+    if (deptQ) filter.department = deptQ;
     if (year) filter.year = parseInt(year);
     if (section) filter.section = section;
 
@@ -252,7 +273,7 @@ export const getStudentDeepView = async (req, res) => {
     }
 
     // Verify department access
-    if (student.department.toLowerCase() !== hod.department.toLowerCase()) {
+    if (!isSameDept(student.department, hod.department)) {
       return res.status(403).json({ error: "Access denied - student not in your department" });
     }
 
@@ -648,7 +669,8 @@ export const getAttendanceForReview = async (req, res) => {
     }
 
     // Get students from HOD's department (active only)
-    const students = await Student.find({ department: hod.department, status: 'active' });
+    const deptQ = makeDeptFilter(hod.department);
+    const students = await Student.find({ department: deptQ, status: 'active' });
     const studentIds = students.map(s => s._id);
 
     const filter = { studentId: { $in: studentIds } };
@@ -709,7 +731,7 @@ export const updateAttendance = async (req, res) => {
     }
 
     // Verify student belongs to HOD's department
-    if (attendance.studentId.department !== hod.department) {
+    if (!isSameDept(attendance.studentId.department, hod.department)) {
       return res.status(403).json({ error: "Cannot modify attendance for students outside your department" });
     }
 
@@ -811,7 +833,7 @@ export const updateLeave = async (req, res) => {
     }
 
     // Verify belongs to HOD's department
-    if (leave.department?.toLowerCase() !== hod.department?.toLowerCase()) {
+    if (!isSameDept(leave.department, hod.department)) {
       return res.status(403).json({ error: "Cannot modify leave outside your department" });
     }
 
@@ -856,11 +878,11 @@ export const getDepartmentStats = async (req, res) => {
     }
 
     const [studentsCount, facultyCount, pendingLeaves] = await Promise.all([
-      Student.countDocuments({ department: hod.department, status: "active" }),
-      Faculty.countDocuments({ department: hod.department, status: "active" }),
+      Student.countDocuments({ department: makeDeptFilter(hod.department), status: "active" }),
+      Faculty.countDocuments({ department: makeDeptFilter(hod.department), status: "active" }),
       Leave.countDocuments({
         studentId: {
-          $in: (await Student.find({ department: hod.department, status: 'active' })).map(s => s._id)
+          $in: (await Student.find({ department: makeDeptFilter(hod.department), status: 'active' })).map(s => s._id)
         },
         status: "pending"
       }),
@@ -903,7 +925,8 @@ export const getAttendanceSummary = async (req, res) => {
     const overallStats = await getAttendanceStats(start, end, hod.department);
 
     // Get per-student summary (active students only)
-    const students = await Student.find({ department: hod.department, status: 'active' }).populate("userId", "name");
+    const deptQ = makeDeptFilter(hod.department);
+    const students = await Student.find({ department: deptQ, status: 'active' }).populate("userId", "name");
     
     const studentSummaries = await Promise.all(students.map(async (student) => {
       const records = await Attendance.find({
@@ -970,7 +993,7 @@ export const getAttendanceAnalytics = async (req, res) => {
         },
       },
       { $unwind: "$student" },
-      { $match: { "student.department": hod.department, date: { $gte: monthsAgo } } },
+      { $match: { "student.department": makeDeptFilter(hod.department), date: { $gte: monthsAgo } } },
       {
         $group: {
           _id: {
@@ -1009,7 +1032,7 @@ export const getPerformanceAnalytics = async (req, res) => {
 
     // Get CGPA stats by year
     const performanceData = await Student.aggregate([
-      { $match: { department: hod.department, status: "active" } },
+      { $match: { department: makeDeptFilter(hod.department), status: "active" } },
       {
         $group: {
           _id: "$year",
@@ -1045,7 +1068,7 @@ export const getWorkloadAnalytics = async (req, res) => {
       return res.status(404).json({ error: "HOD profile not found" });
     }
 
-    const facultyList = await Faculty.find({ department: hod.department, status: "active" })
+    const facultyList = await Faculty.find({ department: makeDeptFilter(hod.department), status: "active" })
       .populate("userId", "name")
       .populate("assignedCourses");
 
@@ -1082,7 +1105,7 @@ export const getSubjectAnalytics = async (req, res) => {
     }
 
     // Get courses in department
-    const courses = await Course.find({ department: hod.department, status: "active" });
+    const courses = await Course.find({ department: makeDeptFilter(hod.department), status: "active" });
 
     // Get attendance stats per course
     const subjectData = await Promise.all(courses.map(async (course) => {
@@ -1124,7 +1147,7 @@ const isEmptyReportData = (data) => {
 
 const buildHodReportData = async (hod, { type, year, section, start, end }) => {
   const normalizedType = type === "performance" ? "academic" : type;
-  const studentFilter = { department: hod.department, status: "active" };
+  const studentFilter = { department: makeDeptFilter(hod.department), status: "active" };
   if (year) studentFilter.year = parseInt(year);
   if (section) studentFilter.section = section;
 
@@ -1214,7 +1237,7 @@ const buildHodReportData = async (hod, { type, year, section, start, end }) => {
   }
 
   if (normalizedType === "faculty") {
-    const faculty = await Faculty.find({ department: hod.department })
+    const faculty = await Faculty.find({ department: makeDeptFilter(hod.department) })
       .populate("userId", "name email")
       .populate("assignedCourses", "code name year semester")
       .lean();
@@ -1246,7 +1269,7 @@ const buildHodReportData = async (hod, { type, year, section, start, end }) => {
 
   if (normalizedType === "placement") {
     const achievements = await Achievement.find({
-      department: hod.department,
+      department: makeDeptFilter(hod.department),
       type: "placement",
       date: { $gte: start, $lte: end },
     }).sort({ date: -1 }).lean();
@@ -1275,11 +1298,11 @@ const buildHodReportData = async (hod, { type, year, section, start, end }) => {
     const students = await Student.find(studentFilter).select("_id cgpa attendance").lean();
     const studentIds = students.map(s => s._id);
     const [faculty, courses, attendanceRecords, marks, placementCount] = await Promise.all([
-      Faculty.find({ department: hod.department }).select("status isClassAdvisor").lean(),
-      Course.find({ department: hod.department, status: "active" }).select("code").lean(),
-      Attendance.find({ department: hod.department, date: { $gte: start, $lte: end } }).select("status").lean(),
+      Faculty.find({ department: makeDeptFilter(hod.department) }).select("status isClassAdvisor").lean(),
+      Course.find({ department: makeDeptFilter(hod.department), status: "active" }).select("code").lean(),
+      Attendance.find({ department: makeDeptFilter(hod.department), date: { $gte: start, $lte: end } }).select("status").lean(),
       Marks.find({ studentId: { $in: studentIds } }).select("isPassed").lean(),
-      Achievement.countDocuments({ department: hod.department, type: "placement", date: { $gte: start, $lte: end } }),
+      Achievement.countDocuments({ department: makeDeptFilter(hod.department), type: "placement", date: { $gte: start, $lte: end } }),
     ]);
     const present = attendanceRecords.filter(r => r.status === "present").length;
     const passed = marks.filter(m => m.isPassed).length;
@@ -1326,7 +1349,8 @@ export const getReports = async (req, res) => {
       return res.status(404).json({ error: "HOD profile not found" });
     }
 
-    const filter = { department: hod.department };
+    const filter = {};
+    if (hod.department) filter.department = makeDeptFilter(hod.department);
     if (type) filter.type = type;
 
     const Report = (await import("../models/Report.js")).default;
@@ -1456,7 +1480,7 @@ export const generateReport = async (req, res) => {
         }),
       };
     } else if (type === "faculty") {
-      const faculty = await Faculty.find({ department: hod.department })
+      const faculty = await Faculty.find({ department: makeDeptFilter(hod.department) })
         .populate("userId", "name email")
         .populate("assignedCourses", "code name year semester")
         .lean();
@@ -1486,7 +1510,7 @@ export const generateReport = async (req, res) => {
       };
     } else if (type === "placement") {
       const achievements = await Achievement.find({
-        department: hod.department,
+        department: makeDeptFilter(hod.department),
         type: "placement",
         date: { $gte: start, $lte: end },
       }).sort({ date: -1 }).lean();
@@ -1514,11 +1538,11 @@ export const generateReport = async (req, res) => {
       const overallStudentIds = overallStudents.map(s => s._id);
       const [students, faculty, courses, attendanceRecords, marks, placementCount] = await Promise.all([
         Promise.resolve(overallStudents),
-        Faculty.find({ department: hod.department }).select("status isClassAdvisor").lean(),
-        Course.find({ department: hod.department, status: "active" }).select("code").lean(),
-        Attendance.find({ department: hod.department, date: { $gte: start, $lte: end } }).select("status").lean(),
+        Faculty.find({ department: makeDeptFilter(hod.department) }).select("status isClassAdvisor").lean(),
+        Course.find({ department: makeDeptFilter(hod.department), status: "active" }).select("code").lean(),
+        Attendance.find({ department: makeDeptFilter(hod.department), date: { $gte: start, $lte: end } }).select("status").lean(),
         Marks.find({ studentId: { $in: overallStudentIds } }).select("isPassed").lean(),
-        Achievement.countDocuments({ department: hod.department, type: "placement", date: { $gte: start, $lte: end } }),
+        Achievement.countDocuments({ department: makeDeptFilter(hod.department), type: "placement", date: { $gte: start, $lte: end } }),
       ]);
 
       const present = attendanceRecords.filter(r => r.status === "present").length;
@@ -1630,7 +1654,7 @@ export const getFacultyWorkload = async (req, res) => {
       return res.status(404).json({ error: "HOD profile not found" });
     }
 
-    const faculty = await Faculty.find({ department: hod.department })
+    const faculty = await Faculty.find({ department: makeDeptFilter(hod.department) })
       .populate("userId", "name email")
       .populate("assignedCourses", "code name");
 
@@ -1678,7 +1702,7 @@ export const getFacultyList = async (req, res) => {
       return res.status(404).json({ error: "HOD profile not found" });
     }
 
-    const faculty = await Faculty.find({ department: hod.department })
+    const faculty = await Faculty.find({ department: makeDeptFilter(hod.department) })
       .populate("userId", "name");
 
     res.json({
@@ -1703,7 +1727,7 @@ export const getSubjectsList = async (req, res) => {
     }
 
     const Course = (await import("../models/Course.js")).default;
-    const courses = await Course.find({ department: hod.department });
+    const courses = await Course.find({ department: makeDeptFilter(hod.department) });
 
     res.json({
       subjects: courses.map(c => c.name),
@@ -1728,7 +1752,7 @@ export const getClassesList = async (req, res) => {
 
     // Get all classes for department with advisor info
     const classes = await Class.find({ 
-      department: hod.department,
+      department: makeDeptFilter(hod.department),
       status: "active"
     })
       .populate({
@@ -1740,7 +1764,7 @@ export const getClassesList = async (req, res) => {
 
     // Get student counts per class
     const studentCounts = await Student.aggregate([
-      { $match: { department: hod.department, status: "active" } },
+      { $match: { department: makeDeptFilter(hod.department), status: "active" } },
       { $group: { _id: { year: "$year", section: "$section" }, count: { $sum: 1 } } }
     ]);
 
@@ -1795,10 +1819,11 @@ export const getTimetable = async (req, res) => {
     }
 
     // Build query
+    const deptQ = makeDeptFilter(hod.department);
     const query = { 
-      department: hod.department.toLowerCase(),
       status: "active",
     };
+    if (deptQ) query.department = deptQ;
     if (year) query.year = parseInt(year);
     if (section) query.section = section;
 
@@ -1876,7 +1901,7 @@ export const getTimetableById = async (req, res) => {
     }
 
     // Verify department access
-    if (entry.department.toLowerCase() !== hod.department.toLowerCase()) {
+    if (!isSameDept(entry.department, hod.department)) {
       return res.status(403).json({ error: "Access denied to this timetable entry" });
     }
 
@@ -2029,7 +2054,7 @@ export const updateTimetable = async (req, res) => {
     }
 
     // Verify department access
-    if (entry.department.toLowerCase() !== hod.department.toLowerCase()) {
+    if (!isSameDept(entry.department, hod.department)) {
       return res.status(403).json({ error: "Access denied to this timetable entry" });
     }
 
@@ -2107,7 +2132,7 @@ export const deleteTimetable = async (req, res) => {
     }
 
     // Verify department access
-    if (entry.department.toLowerCase() !== hod.department.toLowerCase()) {
+    if (!isSameDept(entry.department, hod.department)) {
       return res.status(403).json({ error: "Access denied to this timetable entry" });
     }
 
@@ -2302,7 +2327,7 @@ export const updateDepartmentCourse = async (req, res) => {
     }
 
     // Verify course belongs to HOD's department
-    if (course.department !== hod.department) {
+    if (!isSameDept(course.department, hod.department)) {
       return res.status(403).json({ error: "Cannot modify courses outside your department" });
     }
 
@@ -2356,14 +2381,14 @@ export const assignCoursesToFaculty = async (req, res) => {
     }
 
     // Verify faculty belongs to HOD's department
-    if (faculty.department !== hod.department) {
+    if (!isSameDept(faculty.department, hod.department)) {
       return res.status(403).json({ error: "Cannot assign courses to faculty outside your department" });
     }
 
     // Validate courses exist and belong to department
     const courses = await Course.find({ 
       _id: { $in: courseIds },
-      department: hod.department 
+      department: makeDeptFilter(hod.department) 
     });
 
     if (courses.length !== courseIds.length) {
@@ -2413,7 +2438,7 @@ export const removeCourseFromFaculty = async (req, res) => {
     }
 
     // Verify faculty belongs to HOD's department
-    if (faculty.department !== hod.department) {
+    if (!isSameDept(faculty.department, hod.department)) {
       return res.status(403).json({ error: "Cannot modify faculty outside your department" });
     }
 
@@ -2623,7 +2648,7 @@ export const deleteScheduleEntry = async (req, res) => {
     }
 
     // HOD can only delete entries in their department
-    if (entry.department !== hod.department) {
+    if (!isSameDept(entry.department, hod.department)) {
       return res.status(403).json({ error: "Cannot delete schedule entry from another department" });
     }
 
@@ -2653,7 +2678,7 @@ export const updateScheduleEntry = async (req, res) => {
     }
 
     // HOD can only update entries in their department
-    if (existingEntry.department !== hod.department) {
+    if (!isSameDept(existingEntry.department, hod.department)) {
       return res.status(403).json({ error: "Cannot update schedule entry from another department" });
     }
 
@@ -2806,10 +2831,11 @@ export const getFacultyAvailability = async (req, res) => {
     }
 
     // Default: Get all faculty in department with their basic availability info
+    const deptQ = makeDeptFilter(hod.department);
     const departmentFaculty = await Faculty.find({
       $or: [
-        { department: hod.department },
-        { secondaryDepartments: hod.department },
+        { department: deptQ },
+        { secondaryDepartments: deptQ },
       ],
       status: "active",
     }).populate("userId", "name email");
@@ -2829,7 +2855,7 @@ export const getFacultyAvailability = async (req, res) => {
           empId: f.empId,
           department: f.department,
           isSharedFaculty: f.secondaryDepartments && f.secondaryDepartments.length > 0,
-          isPrimaryDepartment: f.department === hod.department,
+          isPrimaryDepartment: isSameDept(f.department, hod.department),
           scheduledPeriods: scheduledCount,
           maxPeriods: 48, // 6 days * 8 periods
         };
@@ -2863,7 +2889,7 @@ export const addSecondaryDepartment = async (req, res) => {
     }
 
     // Faculty must belong to HOD's department for HOD to modify
-    if (faculty.department !== hod.department) {
+    if (!isSameDept(faculty.department, hod.department)) {
       return res.status(403).json({ error: "Can only modify faculty in your department" });
     }
 
@@ -2915,7 +2941,7 @@ export const removeSecondaryDepartment = async (req, res) => {
       return res.status(404).json({ error: "Faculty not found" });
     }
 
-    if (faculty.department !== hod.department) {
+    if (!isSameDept(faculty.department, hod.department)) {
       return res.status(403).json({ error: "Can only modify faculty in your department" });
     }
 
@@ -3050,7 +3076,7 @@ export const assignClassAdvisor = async (req, res) => {
     }
 
     // Rule 3: HOD can assign advisor only within their department
-    if (faculty.department !== hod.department) {
+    if (!isSameDept(faculty.department, hod.department)) {
       return res.status(403).json({ error: "Faculty not in your department" });
     }
 
@@ -3065,7 +3091,7 @@ export const assignClassAdvisor = async (req, res) => {
 
     // Rule 1: Check if class already has an advisor
     const existingAdvisor = await Faculty.findOne({
-      department: hod.department,
+      department: makeDeptFilter(hod.department),
       "advisorFor.year": parseInt(year),
       "advisorFor.section": section || null,
       isClassAdvisor: true,
@@ -3135,7 +3161,7 @@ export const removeClassAdvisor = async (req, res) => {
       return res.status(404).json({ error: "Faculty not found" });
     }
 
-    if (faculty.department !== hod.department) {
+    if (!isSameDept(faculty.department, hod.department)) {
       return res.status(403).json({ error: "Faculty not in your department" });
     }
 
@@ -3184,7 +3210,7 @@ export const getUnverifiedMarks = async (req, res) => {
     }
 
     // Get students in department
-    const studentQuery = { department: hod.department, status: "active" };
+    const studentQuery = { department: makeDeptFilter(hod.department), status: "active" };
     if (year) studentQuery.year = parseInt(year);
 
     const students = await Student.find(studentQuery).select("_id");
@@ -3261,7 +3287,7 @@ export const verifyMarks = async (req, res) => {
     }
 
     // Verify student is in HOD's department
-    if (marks.studentId?.department !== hod.department) {
+    if (!isSameDept(marks.studentId?.department, hod.department)) {
       return res.status(403).json({ error: "Marks not from your department" });
     }
 
@@ -3298,7 +3324,7 @@ export const bulkVerifyMarks = async (req, res) => {
     // Verify all marks belong to HOD's department
     const marks = await Marks.find({ _id: { $in: marksIds } }).populate("studentId");
     const validIds = marks
-      .filter(m => m.studentId?.department === hod.department)
+      .filter(m => isSameDept(m.studentId?.department, hod.department))
       .map(m => m._id);
 
     const result = await Marks.updateMany(
@@ -3339,7 +3365,7 @@ export const lockSemesterMarks = async (req, res) => {
     }
 
     // Get students in the class
-    const studentQuery = { department: hod.department, status: "active" };
+    const studentQuery = { department: makeDeptFilter(hod.department), status: "active" };
     if (year) studentQuery.year = parseInt(year);
     if (section) studentQuery.section = section;
 

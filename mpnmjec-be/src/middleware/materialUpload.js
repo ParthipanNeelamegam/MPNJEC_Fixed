@@ -19,15 +19,39 @@ const storage = multer.diskStorage({
   }
 });
 
-// Accept only PDF, DOC, DOCX, PPT, ZIP
+// File filter: allow common document and archive types (case-insensitive)
 const fileFilter = (req, file, cb) => {
-  const allowed = ['.pdf', '.doc', '.docx', '.ppt', '.pptx', '.zip'];
-  const ext = path.extname(file.originalname).toLowerCase();
-  if (allowed.includes(ext)) {
-    cb(null, true);
-  } else {
-    cb(new Error('Only PDF, Word, PPT, and ZIP files are allowed'));
+  const allowedExt = new Set(['.pdf', '.doc', '.docx', '.ppt', '.pptx', '.zip', '.xls', '.xlsx', '.rar', '.7z']);
+  const allowedMime = new Set([
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'application/zip',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/x-rar-compressed',
+    'application/x-7z-compressed',
+    'application/octet-stream', // some clients send generic binary
+  ]);
+
+  const originalName = String(file.originalname || '').split('?')[0].trim();
+  const ext = path.extname(originalName).toLowerCase();
+  const mime = String(file.mimetype || '').toLowerCase();
+
+  // Accept if extension or mimetype matches known good types
+  if (allowedExt.has(ext) || allowedMime.has(mime) || /officedocument|msword|pdf|powerpoint|presentation|zip|compressed|excel/.test(mime)) {
+    return cb(null, true);
   }
+
+  // As a last resort, check filename pattern (case-insensitive)
+  const lowerName = originalName.toLowerCase();
+  if (lowerName.endsWith('.pdf') || lowerName.endsWith('.doc') || lowerName.endsWith('.docx') || lowerName.endsWith('.ppt') || lowerName.endsWith('.pptx') || lowerName.endsWith('.zip') || lowerName.endsWith('.xls') || lowerName.endsWith('.xlsx') || lowerName.endsWith('.rar') || lowerName.endsWith('.7z')) {
+    return cb(null, true);
+  }
+
+  cb(new Error('Only PDF, Word, PPT, Excel and common archive files are allowed'));
 };
 
 const upload = multer({

@@ -87,6 +87,7 @@ export default function FacultyResultAnalysis() {
   const [loading, setLoading] = useState(true);
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [selectedSemester, setSelectedSemester] = useState<string>('');
+  const [examType, setExamType] = useState<string>('all');
   const [activeTab, setActiveTab] = useState('completion');
 
   const [completion, setCompletion] = useState<CompletionStatus | null>(null);
@@ -262,6 +263,21 @@ export default function FacultyResultAnalysis() {
                   </SelectContent>
                 </Select>
               </div>
+                <div>
+                  <Label className="text-sm font-medium text-gray-700">Exam Type</Label>
+                  <Select value={examType} onValueChange={setExamType}>
+                    <SelectTrigger className="mt-1.5">
+                      <SelectValue placeholder="Select exam type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All</SelectItem>
+                      <SelectItem value="internal1">Internal 1</SelectItem>
+                      <SelectItem value="internal2">Internal 2</SelectItem>
+                      <SelectItem value="modelExam">Model Exam</SelectItem>
+                      <SelectItem value="finalExam">Semester Exam</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               <Button
                 onClick={checkCompletion}
                 disabled={!selectedSemester || analysisLoading}
@@ -887,10 +903,10 @@ export default function FacultyResultAnalysis() {
                           <p className="text-xs font-medium">{sub.courseName}</p>
                           <p className="text-xs text-gray-500">{sub.courseCode}</p>
                         </td>
-                        <td className="p-2 text-center text-xs">{sub.internal1}</td>
-                        <td className="p-2 text-center text-xs">{sub.internal2}</td>
-                        <td className="p-2 text-center text-xs">{sub.modelExam}</td>
-                        <td className="p-2 text-center text-xs">{sub.finalExam}</td>
+                        <td className={`p-2 text-center text-xs ${examType === 'internal1' ? 'bg-yellow-50' : ''}`}>{sub.internal1}</td>
+                        <td className={`p-2 text-center text-xs ${examType === 'internal2' ? 'bg-yellow-50' : ''}`}>{sub.internal2}</td>
+                        <td className={`p-2 text-center text-xs ${examType === 'modelExam' ? 'bg-yellow-50' : ''}`}>{sub.modelExam}</td>
+                        <td className={`p-2 text-center text-xs ${examType === 'finalExam' ? 'bg-yellow-50' : ''}`}>{sub.finalExam}</td>
                         <td className="p-2 text-center text-xs font-bold">{sub.total}</td>
                         <td className="p-2 text-center">
                           <Badge className={getGradeColor(sub.grade)}>{sub.grade}</Badge>

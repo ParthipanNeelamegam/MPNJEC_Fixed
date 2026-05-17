@@ -114,6 +114,9 @@ export default function FacultyMarksEntry() {
   const [selectedYear, setSelectedYear] = useState<string>('all');
   const [selectedSection, setSelectedSection] = useState<string>('all');
   const [selectedSemester, setSelectedSemester] = useState<string>('1');
+  const [examType, setExamType] = useState<string>('all');
+  // preserve existing behaviour by default - editing enabled
+  const [editMode, setEditMode] = useState<boolean>(true);
 
   const [students, setStudents] = useState<StudentMark[]>([]);
   const [editableMarks, setEditableMarks] = useState<EditableMarks>({});
@@ -275,7 +278,7 @@ export default function FacultyMarksEntry() {
         <main className="flex-1 overflow-y-auto p-4 md:p-6 pb-24 md:pb-6">
           {/* Filters */}
           <Card className="p-4 mb-6 bg-white/80 backdrop-blur-sm border-0 shadow-lg">
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
               <div>
                 <Label className="text-sm font-medium text-gray-700">Course</Label>
                 <Select value={selectedCourse} onValueChange={setSelectedCourse}>
@@ -323,6 +326,19 @@ export default function FacultyMarksEntry() {
                   </SelectContent>
                 </Select>
               </div>
+              <div>
+                <Label className="text-sm font-medium text-gray-700">Exam Type</Label>
+                <Select value={examType} onValueChange={setExamType}>
+                  <SelectTrigger className="mt-1.5"><SelectValue placeholder="Select exam type" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="internal1">Internal 1</SelectItem>
+                    <SelectItem value="internal2">Internal 2</SelectItem>
+                    <SelectItem value="modelExam">Model Exam</SelectItem>
+                    <SelectItem value="finalExam">Semester Exam</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="flex items-end">
                 <Button
                   onClick={loadStudentMarks}
@@ -347,17 +363,71 @@ export default function FacultyMarksEntry() {
               </div>
             </Card>
           )}
-
-          {/* Search */}
+          {/* Search + actions */}
           {students.length > 0 && (
-            <div className="relative mb-4">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <Input
-                placeholder="Search by name or roll number..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
+            <div className="mb-4 flex items-center justify-between gap-4">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                <Input
+                  placeholder="Search by name or roll number..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+
+              <div className="flex items-center gap-3">
+                <Button size="sm" onClick={() => setEditMode(prev => !prev)} className={editMode ? 'bg-blue-600 text-white' : ''}>
+                  {editMode ? 'Edit Mode' : 'Enable Edit'}
+                </Button>
+                <Button size="sm" variant="outline" onClick={async () => {
+                  try {
+                    // dynamic import to avoid SSR/type issues
+                    const { default: jsPDF } = await import('jspdf');
+                    await import('jspdf-autotable');
+                    const doc: any = new jsPDF();
+                    const head = [['Roll No','Name','Internal1','Internal2','Model','Final','Total','Status']];
+                    const body = students.map(s => {
+                      const m = editableMarks[s.id];
+                      const int1 = m?.internal1 ?? (s.marks?.internal1 ?? '');
+                      const int2 = m?.internal2 ?? (s.marks?.internal2 ?? '');
+                      const model = m?.modelExam ?? (s.marks?.modelExam ?? '');
+                      const final = m?.finalExam ?? (s.marks?.finalExam ?? '');
+                      const total = (int1 || int2 || model || final) ? Math.round(((Number(int1) || 0) + (Number(int2) || 0)) / 2 + (Number(model) || 0) / 2 + (Number(final) || 0) / 2) : '-';
+                      const status = s.marks?.verifiedByHOD ? 'Verified' : (m?.modified ? 'Modified' : (s.marks ? 'Pending' : 'Absent'));
+                      return [s.rollNumber, s.name, int1?.toString() ?? '-', int2?.toString() ?? '-', model?.toString() ?? '-', final?.toString() ?? '-', total.toString(), status];
+                    });
+                    (doc as any).autoTable({ head, body, startY: 10 });
+                    doc.save(`${selectedCourseData?.code || 'marks'}-marks.pdf`);
+                  } catch (err) {
+                    console.error('Export PDF failed', err);
+                    toast.error('Failed to export PDF');
+                  }
+                }}>PDF</Button>
+                <Button size="sm" variant="outline" onClick={async () => {
+                  try {
+                    const XLSX = await import('xlsx');
+                    const aoa = [['Roll No','Name','Internal1','Internal2','Model','Final','Total','Status']];
+                    students.forEach(s => {
+                      const m = editableMarks[s.id];
+                      const int1 = m?.internal1 ?? (s.marks?.internal1 ?? '');
+                      const int2 = m?.internal2 ?? (s.marks?.internal2 ?? '');
+                      const model = m?.modelExam ?? (s.marks?.modelExam ?? '');
+                      const final = m?.finalExam ?? (s.marks?.finalExam ?? '');
+                      const total = (int1 || int2 || model || final) ? Math.round(((Number(int1) || 0) + (Number(int2) || 0)) / 2 + (Number(model) || 0) / 2 + (Number(final) || 0) / 2) : '-';
+                      const status = s.marks?.verifiedByHOD ? 'Verified' : (m?.modified ? 'Modified' : (s.marks ? 'Pending' : 'Absent'));
+                      aoa.push([s.rollNumber, s.name, int1?.toString() ?? '-', int2?.toString() ?? '-', model?.toString() ?? '-', final?.toString() ?? '-', total.toString(), status]);
+                    });
+                    const ws = XLSX.utils.aoa_to_sheet(aoa as any[]);
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, 'Marks');
+                    XLSX.writeFile(wb, `${selectedCourseData?.code || 'marks'}-marks.xlsx`);
+                  } catch (err) {
+                    console.error('Export Excel failed', err);
+                    toast.error('Failed to export Excel');
+                  }
+                }}>Excel</Button>
+              </div>
             </div>
           )}
 
@@ -407,16 +477,44 @@ export default function FacultyMarksEntry() {
                             <td className="p-4 font-medium">{student.rollNumber}</td>
                             <td className="p-4">{student.name}</td>
                             <td className="p-4 text-center">
-                              <Input type="text" value={marks?.internal1 || ''} onChange={(e) => handleMarkChange(student.id, 'internal1', e.target.value)} disabled={isVerified} className="w-16 text-center mx-auto" maxLength={2} />
+                              <Input
+                                type="text"
+                                value={marks?.internal1 || ''}
+                                onChange={(e) => handleMarkChange(student.id, 'internal1', e.target.value)}
+                                disabled={isVerified || !editMode || (examType !== 'all' && examType !== 'internal1')}
+                                className={`w-16 text-center mx-auto ${examType === 'internal1' ? 'ring-2 ring-yellow-200' : ''}`}
+                                maxLength={2}
+                              />
                             </td>
                             <td className="p-4 text-center">
-                              <Input type="text" value={marks?.internal2 || ''} onChange={(e) => handleMarkChange(student.id, 'internal2', e.target.value)} disabled={isVerified} className="w-16 text-center mx-auto" maxLength={2} />
+                              <Input
+                                type="text"
+                                value={marks?.internal2 || ''}
+                                onChange={(e) => handleMarkChange(student.id, 'internal2', e.target.value)}
+                                disabled={isVerified || !editMode || (examType !== 'all' && examType !== 'internal2')}
+                                className={`w-16 text-center mx-auto ${examType === 'internal2' ? 'ring-2 ring-yellow-200' : ''}`}
+                                maxLength={2}
+                              />
                             </td>
                             <td className="p-4 text-center">
-                              <Input type="text" value={marks?.modelExam || ''} onChange={(e) => handleMarkChange(student.id, 'modelExam', e.target.value)} disabled={isVerified} className="w-16 text-center mx-auto" maxLength={2} />
+                              <Input
+                                type="text"
+                                value={marks?.modelExam || ''}
+                                onChange={(e) => handleMarkChange(student.id, 'modelExam', e.target.value)}
+                                disabled={isVerified || !editMode || (examType !== 'all' && examType !== 'modelExam')}
+                                className={`w-16 text-center mx-auto ${examType === 'modelExam' ? 'ring-2 ring-yellow-200' : ''}`}
+                                maxLength={2}
+                              />
                             </td>
                             <td className="p-4 text-center">
-                              <Input type="text" value={marks?.finalExam || ''} onChange={(e) => handleMarkChange(student.id, 'finalExam', e.target.value)} disabled={isVerified} className="w-20 text-center mx-auto" maxLength={3} />
+                              <Input
+                                type="text"
+                                value={marks?.finalExam || ''}
+                                onChange={(e) => handleMarkChange(student.id, 'finalExam', e.target.value)}
+                                disabled={isVerified || !editMode || (examType !== 'all' && examType !== 'finalExam')}
+                                className={`w-20 text-center mx-auto ${examType === 'finalExam' ? 'ring-2 ring-yellow-200' : ''}`}
+                                maxLength={3}
+                              />
                             </td>
                             <td className="p-4 text-center font-bold">{hasAnyMark ? total : '-'}</td>
                             <td className="p-4 text-center">

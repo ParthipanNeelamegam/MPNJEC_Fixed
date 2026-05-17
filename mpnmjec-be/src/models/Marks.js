@@ -144,9 +144,13 @@ marksSchema.statics.getClassAnalysis = async function(department, year, section,
   const Student = mongoose.model("Student");
   
   // Get students in this class
-  const studentQuery = { department, year, status: "active" };
+  // Use case-insensitive department matching
+  const deptQuery = department ? { $regex: new RegExp(`^${department}$`, 'i') } : undefined;
+  const studentQuery = { status: "active" };
+  if (deptQuery) studentQuery.department = deptQuery;
+  if (year) studentQuery.year = year;
   if (section) studentQuery.section = section;
-  
+
   const students = await Student.find(studentQuery).select("_id");
   const studentIds = students.map(s => s._id);
   

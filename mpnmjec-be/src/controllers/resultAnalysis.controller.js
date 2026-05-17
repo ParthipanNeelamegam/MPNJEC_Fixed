@@ -11,7 +11,11 @@ import Department from "../models/Department.js";
 // ========================
 
 const checkCompletion = async (department, year, section, semester) => {
-  const studentQuery = { department, year: parseInt(year), status: "active" };
+  // Use case-insensitive department matching to avoid mismatches (e.g. 'CSE' vs 'cse')
+  const deptQuery = department ? { $regex: new RegExp(`^${department}$`, 'i') } : undefined;
+  const studentQuery = { status: "active" };
+  if (deptQuery) studentQuery.department = deptQuery;
+  if (year) studentQuery.year = parseInt(year);
   if (section) studentQuery.section = section;
 
   const students = await Student.find(studentQuery).select("_id rollNumber").populate("userId", "name");
@@ -30,11 +34,10 @@ const checkCompletion = async (department, year, section, semester) => {
     };
   }
 
-  const courses = await Course.find({
-    department,
-    semester: parseInt(semester),
-    status: "active",
-  });
+  const courseDeptQuery = department ? { $regex: new RegExp(`^${department}$`, 'i') } : undefined;
+  const courseFilter = { semester: parseInt(semester), status: "active" };
+  if (courseDeptQuery) courseFilter.department = courseDeptQuery;
+  const courses = await Course.find(courseFilter);
 
   if (courses.length === 0) {
     return {
@@ -166,11 +169,10 @@ export const getCompletionStatus = async (req, res) => {
     const results = [];
 
     for (const y of years) {
-      const sections = await Student.distinct("section", {
-        department,
-        year: y,
-        status: "active",
-      });
+      const deptQuery = department ? { $regex: new RegExp(`^${department}$`, 'i') } : undefined;
+      const distinctFilter = { year: y, status: "active" };
+      if (deptQuery) distinctFilter.department = deptQuery;
+      const sections = await Student.distinct("section", distinctFilter);
 
       if (sections.length > 0 && sections[0]) {
         for (const sec of sections) {
@@ -227,7 +229,10 @@ export const getDetailedAnalysis = async (req, res) => {
     }
 
     // Get students
-    const studentQuery = { department, year: parseInt(year), status: "active" };
+    const deptQuery = department ? { $regex: new RegExp(`^${department}$`, 'i') } : undefined;
+    const studentQuery = { status: "active" };
+    if (deptQuery) studentQuery.department = deptQuery;
+    if (year) studentQuery.year = parseInt(year);
     if (section) studentQuery.section = section;
 
     const students = await Student.find(studentQuery)
@@ -236,11 +241,10 @@ export const getDetailedAnalysis = async (req, res) => {
     const studentIds = students.map(s => s._id);
 
     // Get courses
-    const courses = await Course.find({
-      department,
-      semester: parseInt(semester),
-      status: "active",
-    }).sort({ code: 1 });
+    const courseDeptQuery = department ? { $regex: new RegExp(`^${department}$`, 'i') } : undefined;
+    const courseFilter = { semester: parseInt(semester), status: "active" };
+    if (courseDeptQuery) courseFilter.department = courseDeptQuery;
+    const courses = await Course.find(courseFilter).sort({ code: 1 });
     const courseIds = courses.map(c => c._id);
 
     // Get all marks
@@ -412,7 +416,10 @@ export const getSemiDetailedAnalysis = async (req, res) => {
     }
 
     // Get students
-    const studentQuery = { department, year: parseInt(year), status: "active" };
+    const deptQuery = department ? { $regex: new RegExp(`^${department}$`, 'i') } : undefined;
+    const studentQuery = { status: "active" };
+    if (deptQuery) studentQuery.department = deptQuery;
+    if (year) studentQuery.year = parseInt(year);
     if (section) studentQuery.section = section;
 
     const students = await Student.find(studentQuery)
@@ -421,11 +428,10 @@ export const getSemiDetailedAnalysis = async (req, res) => {
     const studentIds = students.map(s => s._id);
 
     // Get courses
-    const courses = await Course.find({
-      department,
-      semester: parseInt(semester),
-      status: "active",
-    }).sort({ code: 1 });
+    const courseDeptQuery = department ? { $regex: new RegExp(`^${department}$`, 'i') } : undefined;
+    const courseFilter = { semester: parseInt(semester), status: "active" };
+    if (courseDeptQuery) courseFilter.department = courseDeptQuery;
+    const courses = await Course.find(courseFilter).sort({ code: 1 });
     const courseIds = courses.map(c => c._id);
 
     // Get all marks
@@ -606,11 +612,10 @@ export const getOverviewAnalysis = async (req, res) => {
       let totalMarksCount = 0;
 
       for (const y of years) {
-        const sections = await Student.distinct("section", {
-          department: targetDept,
-          year: y,
-          status: "active",
-        });
+        const deptQuery = targetDept ? { $regex: new RegExp(`^${targetDept}$`, 'i') } : undefined;
+        const distinctFilter = { year: y, status: "active" };
+        if (deptQuery) distinctFilter.department = deptQuery;
+        const sections = await Student.distinct("section", distinctFilter);
 
         const sectionList = (sections.length > 0 && sections[0]) ? sections : [null];
 
@@ -674,11 +679,10 @@ export const getOverviewAnalysis = async (req, res) => {
       const deptClasses = [];
 
       for (const y of years) {
-        const sections = await Student.distinct("section", {
-          department: dept,
-          year: y,
-          status: "active",
-        });
+        const deptQuery = dept ? { $regex: new RegExp(`^${dept}$`, 'i') } : undefined;
+        const distinctFilter = { year: y, status: "active" };
+        if (deptQuery) distinctFilter.department = deptQuery;
+        const sections = await Student.distinct("section", distinctFilter);
 
         const sectionList = (sections.length > 0 && sections[0]) ? sections : [null];
 

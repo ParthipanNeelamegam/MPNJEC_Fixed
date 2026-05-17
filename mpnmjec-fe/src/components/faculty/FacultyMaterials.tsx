@@ -118,13 +118,10 @@ export default function FacultyMaterials() {
   };
 
   const handleDownload = (material: Material) => {
-    if (material.fileUrl) {
-      const base = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-      const url = material.fileUrl.startsWith('http') ? material.fileUrl : `${base}${material.fileUrl}`;
-      window.open(url, '_blank');
-    } else {
-      toast.error('No file available for this material');
-    }
+    const base = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+    // Open server endpoint that serves the file and increments download count
+    const url = `${base}/api/materials/${material._id}/download`;
+    window.open(url, '_blank');
   };
 
   const formatSize = (bytes: number | null) => {

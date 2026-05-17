@@ -61,16 +61,10 @@ export default function StudentMaterials() {
 
   const handleDownload = async (material: Material) => {
     try {
-      // Increment download count on backend
-      await downloadMaterial(material.id);
-      // Open actual file if URL exists
-      if (material.fileUrl) {
-        const base = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-        const url = material.fileUrl.startsWith('http') ? material.fileUrl : `${base}${material.fileUrl}`;
-        window.open(url, '_blank');
-      } else {
-        toast.info('No file attached to this material');
-      }
+      // Open server endpoint that serves the file and increments download count
+      const base = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      const url = `${base}/api/materials/${material.id}/download`;
+      window.open(url, '_blank');
     } catch (error) {
       toast.error('Failed to download material');
     }

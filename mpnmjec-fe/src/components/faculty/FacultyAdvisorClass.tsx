@@ -100,7 +100,7 @@ export default function FacultyAdvisorClass() {
   const loadClassStudents = async (_advisorFor: { year: number; section?: string; department?: string }) => {
     try {
       setLoading(true);
-      const res = await axiosInstance.get('/advisor/students');
+      const res = await axiosInstance.get('api/advisor/students');
       const studentData = res.data.students || [];
       setStudents(studentData);
       
