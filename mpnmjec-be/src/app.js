@@ -16,7 +16,6 @@ import advisorRoutes from "./routes/advisor.routes.js";
 import leaveRoutes from "./routes/leave.routes.js";
 import resultAnalysisRoutes from "./routes/resultAnalysis.routes.js";
 import libraryRoutes from "./routes/library.routes.js";
-import requestRouters from "./routes/requestRouters.js"
 
 const app = express();
 
@@ -70,9 +69,6 @@ app.use("/api/admin", adminRoutes);
 // HOD routes
 app.use("/api/hod", hodRoutes);
 
-// send request
-app.use("/api/hod", requestRouters);
-
 // Principal routes
 app.use("/api/principal", principalRoutes);
 
@@ -88,7 +84,5 @@ app.use("/api/result-analysis", resultAnalysisRoutes);
 // Library routes (librarian only)
 app.use("/api/library", libraryRoutes);
 
-// Request routes(Timetable request)
-app.use("/api/request", requestRouters);
 
 export default app;

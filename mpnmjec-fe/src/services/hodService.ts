@@ -5,27 +5,23 @@ import axiosInstance from '../axios/axiosInstance';
 // ========================
 
 export const getDepartmentStats = async () => {
-  return axiosInstance.get('/hod/stats');
+  return axiosInstance.get('/api/hod/stats');
 };
 
 export const getFacultyWorkload = async () => {
-  return axiosInstance.get('/hod/faculty-workload');
+  return axiosInstance.get('/api/hod/faculty-workload');
 };
 
 export const getFacultyList = async () => {
-  return axiosInstance.get('/hod/faculty-list');
+  return axiosInstance.get('/api/hod/faculty-list');
 };
 
 export const getSubjectsList = async () => {
-  return axiosInstance.get('/hod/subjects');
+  return axiosInstance.get('/api/hod/subjects');
 };
 
 export const getClassesList = async () => {
-  return axiosInstance.get('/hod/classes');
-};
-
-export const sendRequest = async (data: any) => {
-  return await axiosInstance.post('/request/send-request', data);
+  return axiosInstance.get('/api/hod/classes');
 };
 
 // ========================
@@ -145,32 +141,32 @@ export const getTimetable = async (filters?: TimetableFilters) => {
   if (filters?.section) params.append('section', filters.section);
   
   const queryString = params.toString();
-  return axiosInstance.get(`/hod/timetable${queryString ? `?${queryString}` : ''}`);
+  return axiosInstance.get(`/api/hod/timetable${queryString ? `?${queryString}` : ''}`);
 };
 
 // Get single timetable entry by ID (for View Details popup)
 export const getTimetableById = async (id: string) => {
-  return axiosInstance.get(`/hod/timetable/${id}`);
+  return axiosInstance.get(`/api/hod/timetable/${id}`);
 };
 
 // Create new timetable entry with conflict detection
 export const saveTimetable = async (data: CreateTimetableData) => {
-  return axiosInstance.post('/hod/timetable', data);
+  return axiosInstance.post('/api/hod/timetable', data);
 };
 
 // Update timetable entry
 export const updateTimetable = async (id: string, data: Partial<CreateTimetableData>) => {
-  return axiosInstance.put(`/hod/timetable/${id}`, data);
+  return axiosInstance.put(`/api/hod/timetable/${id}`, data);
 };
 
 // Delete timetable entry
 export const deleteTimetableEntry = async (id: string) => {
-  return axiosInstance.delete(`/hod/timetable/${id}`);
+  return axiosInstance.delete(`/api/hod/timetable/${id}`);
 };
 
 // Legacy saveTimetable for backward compatibility
 export const saveTimetableSlot = async (data: { day: string; period: number; slot: TimetableSlot }) => {
-  return axiosInstance.post('/hod/timetable', data);
+  return axiosInstance.post('/api/hod/timetable', data);
 };
 
 // ========================
@@ -178,11 +174,11 @@ export const saveTimetableSlot = async (data: { day: string; period: number; slo
 // ========================
 
 export const getDepartmentFaculty = async () => {
-  return axiosInstance.get('/hod/faculty');
+  return axiosInstance.get('/api/hod/faculty');
 };
 
 export const getFacultyDetails = async (facultyId: string) => {
-  return axiosInstance.get(`/hod/faculty/${facultyId}`);
+  return axiosInstance.get(`/api/hod/faculty/${facultyId}`);
 };
 
 export const getFacultySchedule = async (facultyId: string, params?: { year?: number; section?: string }) => {
@@ -191,7 +187,7 @@ export const getFacultySchedule = async (facultyId: string, params?: { year?: nu
   if (params?.section) searchParams.append('section', params.section);
   
   const queryString = searchParams.toString();
-  return axiosInstance.get(`/hod/faculty/${facultyId}/schedule${queryString ? `?${queryString}` : ''}`);
+  return axiosInstance.get(`/api/hod/faculty/${facultyId}/schedule${queryString ? `?${queryString}` : ''}`);
 };
 
 export const getDepartmentStudents = async (params?: { year?: number; section?: string }) => {
@@ -200,7 +196,7 @@ export const getDepartmentStudents = async (params?: { year?: number; section?: 
   if (params?.section) searchParams.append('section', params.section);
   
   const queryString = searchParams.toString();
-  return axiosInstance.get(`/hod/students${queryString ? `?${queryString}` : ''}`);
+  return axiosInstance.get(`/api/hod/students${queryString ? `?${queryString}` : ''}`);
 };
 
 // ========================
@@ -275,7 +271,7 @@ export interface StudentDeepView {
 
 // Get full student academic profile (deep view)
 export const getStudentDeepView = async (studentId: string) => {
-  return axiosInstance.get<StudentDeepView>(`/hod/student/${studentId}`);
+  return axiosInstance.get<StudentDeepView>(`/api/hod/student/${studentId}`);
 };
 
 // ========================
@@ -289,7 +285,7 @@ export const getAttendanceForReview = async (params?: { date?: string; courseId?
   if (params?.approved !== undefined) searchParams.append('approved', params.approved.toString());
   
   const queryString = searchParams.toString();
-  return axiosInstance.get(`/hod/attendance${queryString ? `?${queryString}` : ''}`);
+  return axiosInstance.get(`/api/hod/attendance${queryString ? `?${queryString}` : ''}`);
 };
 
 export const getAttendanceSummary = async (params?: { startDate?: string; endDate?: string }) => {
@@ -298,7 +294,7 @@ export const getAttendanceSummary = async (params?: { startDate?: string; endDat
   if (params?.endDate) searchParams.append('endDate', params.endDate);
   
   const queryString = searchParams.toString();
-  return axiosInstance.get(`/hod/attendance-summary${queryString ? `?${queryString}` : ''}`);
+  return axiosInstance.get(`/api/hod/attendance-summary${queryString ? `?${queryString}` : ''}`);
 };
 
 export interface UpdateAttendanceData {
@@ -308,7 +304,7 @@ export interface UpdateAttendanceData {
 }
 
 export const updateAttendance = async (id: string, data: UpdateAttendanceData) => {
-  return axiosInstance.put(`/hod/attendance/${id}`, data);
+  return axiosInstance.put(`/api/hod/attendance/${id}`, data);
 };
 
 // ========================
@@ -317,7 +313,7 @@ export const updateAttendance = async (id: string, data: UpdateAttendanceData) =
 
 export const getLeaveRequests = async (status?: 'pending' | 'approved' | 'rejected') => {
   const params = status ? `?status=${status}` : '';
-  return axiosInstance.get(`/hod/leave${params}`);
+  return axiosInstance.get(`/api/hod/leave${params}`);
 };
 
 export interface UpdateLeaveData {
@@ -326,7 +322,7 @@ export interface UpdateLeaveData {
 }
 
 export const updateLeave = async (id: string, data: UpdateLeaveData) => {
-  return axiosInstance.put(`/hod/leave/${id}`, data);
+  return axiosInstance.put(`/api/hod/leave/${id}`, data);
 };
 
 // ========================
@@ -335,19 +331,19 @@ export const updateLeave = async (id: string, data: UpdateLeaveData) => {
 
 export const getAttendanceAnalytics = async (months?: number) => {
   const params = months ? `?months=${months}` : '';
-  return axiosInstance.get(`/hod/analytics/attendance${params}`);
+  return axiosInstance.get(`/api/hod/analytics/attendance${params}`);
 };
 
 export const getPerformanceAnalytics = async () => {
-  return axiosInstance.get('/hod/analytics/performance');
+  return axiosInstance.get('/api/hod/analytics/performance');
 };
 
 export const getWorkloadAnalytics = async () => {
-  return axiosInstance.get('/hod/analytics/workload');
+  return axiosInstance.get('/api/hod/analytics/workload');
 };
 
 export const getSubjectAnalytics = async () => {
-  return axiosInstance.get('/hod/analytics/subjects');
+  return axiosInstance.get('/api/hod/analytics/subjects');
 };
 
 // ========================
@@ -367,11 +363,11 @@ export const getReports = async (filters?: ReportFilters) => {
   if (filters?.limit) params.append('limit', filters.limit.toString());
   
   const queryString = params.toString() ? `?${params.toString()}` : '';
-  return axiosInstance.get(`/hod/reports${queryString}`);
+  return axiosInstance.get(`/api/hod/reports${queryString}`);
 };
 
 export interface GenerateReportData {
-  type: 'attendance' | 'performance' | 'fee' | 'academic';
+  type: 'academic' | 'attendance' | 'faculty' | 'overall' | 'placement' | 'performance';
   category?: string;
   year?: number;
   section?: string;
@@ -381,11 +377,11 @@ export interface GenerateReportData {
 }
 
 export const generateReport = async (data: GenerateReportData) => {
-  return axiosInstance.post('/hod/reports', data);
+  return axiosInstance.post('/api/hod/reports', data);
 };
 
 export const getReportById = async (id: string) => {
-  return axiosInstance.get(`/hod/reports/${id}`);
+  return axiosInstance.get(`/api/hod/reports/${id}`);
 };
 
 // ========================
@@ -405,23 +401,23 @@ export interface TakeAttendanceData {
 }
 
 export const takeAttendance = async (data: TakeAttendanceData) => {
-  return axiosInstance.post('/faculty/attendance', data);
+  return axiosInstance.post('/api/faculty/attendance', data);
 };
 
 export const getTodaySchedule = async () => {
-  return axiosInstance.get('/hod/timetable/today');
+  return axiosInstance.get('/api/hod/timetable/today');
 };
 
 export const getMyCourses = async () => {
-  return axiosInstance.get('/faculty/my-courses');
+  return axiosInstance.get('/api/faculty/my-courses');
 };
 
 export const getStudentsByCourse = async (courseId: string) => {
-  return axiosInstance.get(`/faculty/students?courseId=${courseId}`);
+  return axiosInstance.get(`/api/faculty/students?courseId=${courseId}`);
 };
 
 export const getCurrentPeriod = async () => {
-  return axiosInstance.get('/faculty/current-period');
+  return axiosInstance.get('/api/faculty/current-period');
 };
 
 // ========================
@@ -438,23 +434,23 @@ export interface CourseData {
 }
 
 export const getDepartmentCourses = async () => {
-  return axiosInstance.get('/hod/courses');
+  return axiosInstance.get('/api/hod/courses');
 };
 
 export const createCourse = async (data: CourseData) => {
-  return axiosInstance.post('/hod/courses', data);
+  return axiosInstance.post('/api/hod/courses', data);
 };
 
 export const updateCourse = async (id: string, data: Partial<CourseData & { status: string }>) => {
-  return axiosInstance.put(`/hod/courses/${id}`, data);
+  return axiosInstance.put(`/api/hod/courses/${id}`, data);
 };
 
 export const assignCoursesToFaculty = async (facultyId: string, courseIds: string[]) => {
-  return axiosInstance.post(`/hod/faculty/${facultyId}/assign-courses`, { courseIds });
+  return axiosInstance.post(`/api/hod/faculty/${facultyId}/assign-courses`, { courseIds });
 };
 
 export const removeCourseFromFaculty = async (facultyId: string, courseId: string) => {
-  return axiosInstance.delete(`/hod/faculty/${facultyId}/courses/${courseId}`);
+  return axiosInstance.delete(`/api/hod/faculty/${facultyId}/courses/${courseId}`);
 };
 
 // ========================
@@ -499,48 +495,48 @@ export interface FacultyAvailability {
 
 // Create schedule entry with conflict detection
 export const createScheduleEntry = async (data: ScheduleEntryData) => {
-  return axiosInstance.post('/hod/schedule', data);
+  return axiosInstance.post('/api/hod/schedule', data);
 };
 
 // Get department schedule (optional day filter)
 export const getDepartmentSchedule = async (day?: string) => {
   const params = day ? `?day=${day}` : '';
-  return axiosInstance.get(`/hod/schedule${params}`);
+  return axiosInstance.get(`/api/hod/schedule${params}`);
 };
 
 // Update schedule entry
 export const updateScheduleEntry = async (id: string, data: Partial<ScheduleEntryData>) => {
-  return axiosInstance.put(`/hod/schedule/${id}`, data);
+  return axiosInstance.put(`/api/hod/schedule/${id}`, data);
 };
 
 // Delete schedule entry
 export const deleteScheduleEntry = async (id: string) => {
-  return axiosInstance.delete(`/hod/schedule/${id}`);
+  return axiosInstance.delete(`/api/hod/schedule/${id}`);
 };
 
 // Get faculty availability for a specific day
 export const getFacultyDayAvailability = async (facultyId: string, day: string) => {
-  return axiosInstance.get(`/hod/faculty-availability?facultyId=${facultyId}&day=${day}`);
+  return axiosInstance.get(`/api/hod/faculty-availability?facultyId=${facultyId}&day=${day}`);
 };
 
 // Get available faculty for a specific slot
 export const getAvailableFacultyForSlot = async (day: string, period: number) => {
-  return axiosInstance.get(`/hod/faculty-availability?day=${day}&period=${period}`);
+  return axiosInstance.get(`/api/hod/faculty-availability?day=${day}&period=${period}`);
 };
 
 // Get all department faculty with availability summary
 export const getDepartmentFacultyAvailability = async () => {
-  return axiosInstance.get('/hod/faculty-availability');
+  return axiosInstance.get('/api/hod/faculty-availability');
 };
 
 // Add secondary department permission for faculty
 export const addFacultySecondaryDepartment = async (facultyId: string, department: string) => {
-  return axiosInstance.post(`/hod/faculty/${facultyId}/secondary-departments`, { department });
+  return axiosInstance.post(`/api/hod/faculty/${facultyId}/secondary-departments`, { department });
 };
 
 // Remove secondary department permission from faculty
 export const removeFacultySecondaryDepartment = async (facultyId: string, department: string) => {
-  return axiosInstance.delete(`/hod/faculty/${facultyId}/secondary-departments/${department}`);
+  return axiosInstance.delete(`/api/hod/faculty/${facultyId}/secondary-departments/${department}`);
 };
 
 // Helper: Check if slot is available before scheduling
@@ -567,7 +563,7 @@ export const getDepartmentAnalysis = async (filters: AnalysisFilters) => {
   if (filters.year) params.append('year', filters.year.toString());
   if (filters.section) params.append('section', filters.section);
   
-  return axiosInstance.get(`/hod/analysis?${params.toString()}`);
+  return axiosInstance.get(`/api/hod/analysis?${params.toString()}`);
 };
 
 // Full Department Analysis interface
@@ -624,22 +620,22 @@ export const getFullDepartmentAnalysis = async (filters?: AnalysisFilters) => {
   if (filters?.section) params.append('section', filters.section);
   
   const queryString = params.toString();
-  return axiosInstance.get<FullDepartmentAnalysis>(`/hod/analysis/full${queryString ? `?${queryString}` : ''}`);
+  return axiosInstance.get<FullDepartmentAnalysis>(`/api/hod/analysis/full${queryString ? `?${queryString}` : ''}`);
 };
 
 // Get class advisors in department
 export const getClassAdvisors = async () => {
-  return axiosInstance.get('/hod/class-advisors');
+  return axiosInstance.get('/api/hod/class-advisors');
 };
 
 // Assign class advisor (only one advisor per class, one class per faculty)
 export const assignClassAdvisor = async (facultyId: string, year: number, section?: string | null) => {
-  return axiosInstance.put('/hod/assign-advisor', { facultyId, year, section });
+  return axiosInstance.put('/api/hod/assign-advisor', { facultyId, year, section });
 };
 
 // Remove class advisor assignment
 export const removeClassAdvisor = async (facultyId: string) => {
-  return axiosInstance.delete(`/hod/remove-advisor/${facultyId}`);
+  return axiosInstance.delete(`/api/hod/remove-advisor/${facultyId}`);
 };
 
 // Helper: Check if faculty can be assigned as advisor (not already advisor of another class)
@@ -658,20 +654,20 @@ export const getUnverifiedMarks = async (semester?: number, year?: number) => {
   if (semester) params.append('semester', semester.toString());
   if (year) params.append('year', year.toString());
   
-  return axiosInstance.get(`/hod/unverified-marks?${params.toString()}`);
+  return axiosInstance.get(`/api/hod/unverified-marks?${params.toString()}`);
 };
 
 // Verify single marks entry
 export const verifyMarks = async (marksId: string) => {
-  return axiosInstance.put(`/hod/verify-marks/${marksId}`);
+  return axiosInstance.put(`/api/hod/verify-marks/${marksId}`);
 };
 
 // Bulk verify marks
 export const bulkVerifyMarks = async (marksIds: string[]) => {
-  return axiosInstance.put('/hod/verify-marks-bulk', { marksIds });
+  return axiosInstance.put('/api/hod/verify-marks-bulk', { marksIds });
 };
 
 // Lock semester marks
 export const lockSemesterMarks = async (semester: number, year?: number, section?: string) => {
-  return axiosInstance.put('/hod/lock-semester', { semester, year, section });
+  return axiosInstance.put('/api/hod/lock-semester', { semester, year, section });
 };

@@ -77,10 +77,10 @@ interface ScheduleEntry {
   id: string;
   period: number;
   course: { code: string; name: string } | null;
+  subject: string | null;
   year: number;
   section: string;
-  room: string;
-  type: string;
+  classroom: string;
 }
 
 interface FacultySchedule {
@@ -518,9 +518,9 @@ export default function HODFaculty() {
                     <Plus className="w-4 h-4 mr-2" />
                     Assign Courses
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => openScheduleDialog(f)}>
+                  <Button variant="outline" size="sm" onClick={() => openScheduleDialog(f)} title="View faculty timetable for this semester">
                     <Calendar className="w-4 h-4 mr-2" />
-                    View Schedule
+                    View Timetable
                   </Button>
                   <Button variant="outline" size="sm" onClick={() => openDetailsDialog(f)}>
                     <FileText className="w-4 h-4 mr-2" />
@@ -757,12 +757,12 @@ export default function HODFaculty() {
                           {dayEntries.sort((a, b) => a.period - b.period).map(entry => (
                             <div key={entry.id} className="bg-gray-50 rounded-lg p-2 text-sm">
                               <div className="font-medium text-blue-600">Period {entry.period}</div>
-                              <div className="text-gray-700">{entry.course?.code || 'N/A'}</div>
-                              <div className="text-xs text-gray-500">{entry.course?.name || 'N/A'}</div>
+                              <div className="text-gray-700">{entry.course?.code || entry.subject || 'N/A'}</div>
+                              <div className="text-xs text-gray-500">{entry.course?.name || entry.subject || 'N/A'}</div>
                               <div className="text-xs text-gray-400 mt-1">
                                 Year {entry.year} {entry.section && `- ${entry.section}`}
                               </div>
-                              <div className="text-xs text-gray-400">Room: {entry.room}</div>
+                              <div className="text-xs text-gray-400">Room: {entry.classroom || 'TBD'}</div>
                             </div>
                           ))}
                         </div>

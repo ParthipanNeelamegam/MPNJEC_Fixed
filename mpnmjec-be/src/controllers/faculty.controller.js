@@ -6,6 +6,7 @@ import LeaveRequest from "../models/LeaveRequest.js";
 import Course from "../models/Course.js";
 import Material from "../models/Material.js";
 import TimeTable from "../models/TimeTable.js";
+import Marks from "../models/Marks.js"; 
 import { getCurrentPeriod, canEditPeriod } from "../utils/period.js";
 
 // ========================
@@ -471,9 +472,10 @@ export const getFacultyDashboardStats = async (req, res) => {
       },
     ]);
 
-    // Get pending leave requests count
-    const pendingLeaves = await Leave.countDocuments({
-      status: "pending",
+    // Get pending leave requests count (using LeaveRequest model)
+    const pendingLeaves = await LeaveRequest.countDocuments({
+      department: { $in: courseDepartments },
+      finalStatus: 'Pending',
     });
 
     // Get total classes taken this month
@@ -589,13 +591,16 @@ export const getMaterials = async (req, res) => {
     const total = await Material.countDocuments(filter);
 
     res.json({
-      materials: materials.map(m => ({
+            materials: materials.map(m => ({
         _id: m._id,
         title: m.title,
         description: m.description,
         subject: m.subject,
         type: m.type,
         course: m.courseId ? { code: m.courseId.code, name: m.courseId.name } : null,
+        fileUrl: m.fileUrl || null,
+        fileName: m.fileName || null,
+        fileSize: m.fileSize || null,
         downloads: m.downloads,
         views: m.views,
         createdAt: m.createdAt,
@@ -754,12 +759,12 @@ export const getMarksForCourse = async (req, res) => {
       department: course.department,
       status: "active",
     };
-    if (year) studentQuery.year = parseInt(year);
-    if (section) studentQuery.section = section;
+    if (year && year !== 'undefined') studentQuery.year = parseInt(year);
+    if (section && section !== 'undefined' && section !== 'all') studentQuery.section = section;
     // Make semester filter optional: only filter if explicitly required
     // If no students found with semester, try without semester filter
     let students = [];
-    if (semester) {
+    if (semester && semester !== 'undefined') {
       students = await Student.find({ ...studentQuery, semester: parseInt(semester) })
         .populate("userId", "name")
         .sort({ rollNumber: 1 });
@@ -771,6 +776,12 @@ export const getMarksForCourse = async (req, res) => {
       }
     } else {
       students = await Student.find(studentQuery)
+        .populate("userId", "name")
+        .sort({ rollNumber: 1 });
+    }
+    // Final fallback: if still no students, query by department only
+    if (students.length === 0) {
+      students = await Student.find({ department: course.department, status: "active" })
         .populate("userId", "name")
         .sort({ rollNumber: 1 });
     }
@@ -897,9 +908,10 @@ export const enterMarks = async (req, res) => {
 export const bulkEnterMarks = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { courseId, semester, academicYear, marksData } = req.body;
+    const { courseId, academicYear, marksData } = req.body;
+    const semester = Number(req.body.semester);
 
-    if (!courseId || !semester || !marksData || !Array.isArray(marksData)) {
+    if (!courseId || !semester || isNaN(semester) || !marksData || !Array.isArray(marksData)) {
       return res.status(400).json({ error: "courseId, semester, and marksData array are required" });
     }
 
@@ -908,50 +920,74 @@ export const bulkEnterMarks = async (req, res) => {
       return res.status(404).json({ error: "Faculty profile not found" });
     }
 
-    // Check if faculty is assigned to this course
-    const isAssigned = faculty.assignedCourses.some(c => c._id.toString() === courseId);
+    // Support both populated Course objects and raw ObjectIds
+    const isAssigned = faculty.assignedCourses.some(c => {
+      const id = c._id ? c._id.toString() : c.toString();
+      return id === courseId;
+    });
     if (!isAssigned) {
       return res.status(403).json({ error: "You are not assigned to this course" });
     }
 
-    const Marks = (await import("../models/Marks.js")).default;
+    const academicYearStr = academicYear || `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`;
     const results = [];
 
     for (const data of marksData) {
-      const { studentId, internal1, internal2, modelExam, finalExam } = data;
+      try {
+        const { studentId } = data;
+        const internal1 = data.internal1 !== undefined ? Number(data.internal1) : undefined;
+        const internal2 = data.internal2 !== undefined ? Number(data.internal2) : undefined;
+        const modelExam = data.modelExam !== undefined ? Number(data.modelExam) : undefined;
+        const finalExam = data.finalExam !== undefined ? Number(data.finalExam) : undefined;
 
-      let marks = await Marks.findOne({ studentId, courseId, semester });
-      
-      if (!marks) {
-        marks = new Marks({
-          studentId,
-          courseId,
-          semester,
-          enteredBy: faculty._id,
-          academicYear: academicYear || `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`,
-        });
-      } else {
-        if (marks.verifiedByHOD) {
-          results.push({ studentId, success: false, error: "Already verified" });
-          continue;
+        let marks = await Marks.findOne({ studentId, courseId, semester });
+
+        if (!marks) {
+          marks = new Marks({
+            studentId,
+            courseId,
+            semester,
+            enteredBy: faculty._id,
+            academicYear: academicYearStr,
+            internal1: internal1 ?? 0,
+            internal2: internal2 ?? 0,
+            modelExam: modelExam ?? 0,
+            finalExam: finalExam ?? 0,
+          });
+        } else {
+          if (marks.verifiedByHOD) {
+            results.push({ studentId, success: false, error: "Already verified by HOD" });
+            continue;
+          }
+          marks.lastEditedBy = faculty._id;
+          if (internal1 !== undefined) marks.internal1 = internal1;
+          if (internal2 !== undefined) marks.internal2 = internal2;
+          if (modelExam !== undefined) marks.modelExam = modelExam;
+          if (finalExam !== undefined) marks.finalExam = finalExam;
         }
-        marks.lastEditedBy = faculty._id;
+
+        await marks.save();
+        results.push({ studentId, success: true });
+      } catch (innerErr) {
+        results.push({ studentId: data.studentId, success: false, error: innerErr.message });
       }
+    }
 
-      if (internal1 !== undefined) marks.internal1 = internal1;
-      if (internal2 !== undefined) marks.internal2 = internal2;
-      if (modelExam !== undefined) marks.modelExam = modelExam;
-      if (finalExam !== undefined) marks.finalExam = finalExam;
+    const successCount = results.filter(r => r.success).length;
+    const failCount = results.filter(r => !r.success).length;
 
-      await marks.save();
-      results.push({ studentId, success: true });
+    if (successCount === 0 && failCount > 0) {
+      return res.status(500).json({
+        error: "All marks failed to save",
+        details: results,
+      });
     }
 
     res.json({
-      message: "Bulk marks entry completed",
+      message: `Marks saved: ${successCount} succeeded, ${failCount} failed`,
       results,
-      successCount: results.filter(r => r.success).length,
-      failCount: results.filter(r => !r.success).length,
+      successCount,
+      failCount,
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
