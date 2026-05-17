@@ -19,6 +19,7 @@ export interface StudentData {
   year: number;
   section?: string;
   admissionYear?: number;
+  studentType?: 'hosteller' | 'day_scholar';
 }
 
 export interface StudentCreateResponse {

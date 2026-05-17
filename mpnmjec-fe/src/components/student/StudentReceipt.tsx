@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import { Download, Printer, Loader2 } from 'lucide-react';
-import { getReceiptDetails } from '../../services/studentService';
+import { getReceiptDetails, downloadReceiptPdf } from '../../services/studentService';
 import { toast } from 'sonner';
 
 interface ReceiptData {
@@ -113,7 +113,31 @@ export default function StudentReceipt() {
 
         <div className="flex gap-3 print:hidden">
           <Button className="flex-1" onClick={() => window.print()}><Printer className="w-4 h-4 mr-2" />Print</Button>
-          <Button variant="outline" className="flex-1"><Download className="w-4 h-4 mr-2" />Download PDF</Button>
+          <Button
+            variant="outline"
+            className="flex-1"
+            onClick={async () => {
+              if (!id) return;
+              try {
+                const res = await downloadReceiptPdf(id);
+                const blob = new Blob([res.data], { type: res.headers?.['content-type'] || 'application/pdf' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `receipt_${receipt?.receiptNumber || id}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+                toast.success('Receipt downloaded');
+              } catch (error) {
+                console.error('Failed to download receipt:', error);
+                toast.error('Failed to download receipt');
+              }
+            }}
+          >
+            <Download className="w-4 h-4 mr-2" />Download PDF
+          </Button>
         </div>
       </Card>
     </div>

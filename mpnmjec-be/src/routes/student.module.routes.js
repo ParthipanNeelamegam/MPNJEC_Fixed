@@ -9,6 +9,7 @@ import {
   getStudentFeesHistory,
   getFeeStructure,
   getFeeReceipt,
+  downloadFeeReceipt,
   payStudentFees,
   applyLeave,
   getLeaves,
@@ -34,6 +35,7 @@ router.get("/fees/summary", authenticate, getStudentFeesSummary);
 router.get("/fees/history", authenticate, getStudentFeesHistory);
 router.get("/fees/structure", authenticate, getFeeStructure);
 router.get("/fees/receipt/:id", authenticate, getFeeReceipt);
+router.get('/fees/receipt/:id/download', authenticate, downloadFeeReceipt);
 router.post("/fees/pay", authenticate, payStudentFees);
 
 router.get("/library", authenticate, getStudentLibraryCard);

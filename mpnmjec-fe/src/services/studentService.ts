@@ -73,6 +73,10 @@ export const getReceiptDetails = async (receiptId: string) => {
   return axiosInstance.get(`/api/student/fees/receipt/${receiptId}`);
 };
 
+export const downloadReceiptPdf = async (receiptId: string) => {
+  return axiosInstance.get(`/api/student/fees/receipt/${receiptId}/download`, { responseType: 'blob' });
+};
+
 export const getStudentLibraryCard = async () => {
   return axiosInstance.get('/api/student/library');
 };

@@ -56,6 +56,7 @@ export const createStudent = async (req, res) => {
       year, 
       section,
       admissionYear 
+      , studentType
     } = req.body;
 
     // Normalize inputs
@@ -117,6 +118,7 @@ export const createStudent = async (req, res) => {
       year: parseInt(year),
       section: section?.trim() || "",
       admissionYear: admissionYear ? parseInt(admissionYear) : new Date().getFullYear(),
+      studentType: (studentType && ['hosteller','day_scholar'].includes(String(studentType).toLowerCase())) ? String(studentType).toLowerCase() : 'day_scholar',
       status: "active",
     });
 
@@ -130,6 +132,7 @@ export const createStudent = async (req, res) => {
         name: user.name,
         email: user.email,
         rollNumber: student.rollNumber,
+        studentType: student.studentType,
         department: student.department,
         year: student.year,
         section: student.section,
@@ -162,6 +165,7 @@ export const getStudents = async (req, res) => {
       email: s.userId?.email,
       username: s.userId?.username,
       rollNumber: s.rollNumber,
+      studentType: s.studentType || 'day_scholar',
       department: s.department,
       year: s.year,
       section: s.section,
@@ -191,6 +195,7 @@ export const updateStudent = async (req, res) => {
     const {
       name, email, rollNumber, department, year, section, cgpa, attendance, status,
       fatherName, motherName, dob, aadhaar, mobile, parentMobile, address, admissionYear,
+      studentType,
     } = req.body;
 
     const student = await Student.findById(id);
@@ -211,6 +216,7 @@ export const updateStudent = async (req, res) => {
     if (department) student.department = department.toLowerCase();
     if (year) student.year = year;
     if (section !== undefined) student.section = section;
+    if (studentType !== undefined) student.studentType = studentType;
     if (fatherName !== undefined) student.fatherName = fatherName;
     if (motherName !== undefined) student.motherName = motherName;
     if (dob !== undefined) student.dob = dob ? new Date(dob) : undefined;
@@ -1568,18 +1574,33 @@ export const createFeeRecord = async (req, res) => {
 
     const normalizedStructure = normalizeFeeStructure(feeStructure, totalAmount);
 
+    // Detect if base structure contains hostel fee items
+    const baseHasHostel = Array.isArray(normalizedStructure) && normalizedStructure.some(item => item.category === 'hostel');
+
     if (applyToAll) {
       const studentFilter = { status: "active" };
       if (department) studentFilter.department = department.toLowerCase();
       if (year) studentFilter.year = parseInt(year);
-      const students = await Student.find(studentFilter).select("_id userId");
+      const students = await Student.find(studentFilter).select("_id userId studentType");
       const results = [];
 
       for (const student of students) {
+        // If base structure contains hostel fees, exclude hostel items for day scholars
+        let studentStructure = normalizedStructure;
+        let studentTotal = Number(totalAmount);
+        if (baseHasHostel && student.studentType !== 'hosteller') {
+          studentStructure = (Array.isArray(normalizedStructure) ? normalizedStructure.filter(i => i.category !== 'hostel') : []);
+          studentTotal = studentStructure.reduce((s, it) => s + (Number(it.amount || 0)), 0);
+          if (!studentStructure || studentStructure.length === 0) {
+            // Nothing to apply for this student
+            continue;
+          }
+        }
+
         const existingFee = await Fee.findOne({ studentId: student._id, academicYear, semester });
         if (existingFee) {
-          existingFee.feeStructure = normalizedStructure;
-          existingFee.totalAmount = Number(totalAmount);
+          existingFee.feeStructure = studentStructure;
+          existingFee.totalAmount = Number(studentTotal);
           existingFee.dueDate = new Date(dueDate);
           existingFee.finePerDay = Number(finePerDay || 0);
           await existingFee.save();
@@ -1589,8 +1610,8 @@ export const createFeeRecord = async (req, res) => {
             studentId: student._id,
             academicYear,
             semester,
-            feeStructure: normalizedStructure,
-            totalAmount: Number(totalAmount),
+            feeStructure: studentStructure,
+            totalAmount: Number(studentTotal),
             dueDate: new Date(dueDate),
             finePerDay: Number(finePerDay || 0),
           }));

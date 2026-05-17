@@ -361,28 +361,44 @@ export const getStudentFeesSummary = async (req, res) => {
     const fee = await Fee.findOne({ studentId: student._id }).sort({ createdAt: -1 });
     if (!fee) return res.json({ message: 'No fee data found', fees: null });
 
+    // Recompute fine and pending amount dynamically (don't require a save)
+    let computedFine = fee.fineAmount || 0;
+    const today = new Date();
+    if (fee.dueDate && fee.finePerDay > 0 && fee.paidAmount < fee.totalAmount) {
+      if (today > fee.dueDate) {
+        const due = new Date(fee.dueDate);
+        due.setHours(0, 0, 0, 0);
+        const t = new Date();
+        t.setHours(0, 0, 0, 0);
+        const daysOverdue = Math.max(0, Math.ceil((t - due) / (1000 * 60 * 60 * 24)));
+        computedFine = daysOverdue * (fee.finePerDay || 0);
+      }
+    }
+
+    const pendingAmount = Math.max(0, fee.totalAmount + (computedFine || 0) - fee.paidAmount);
+
     res.json({
       fees: {
         _id: fee._id,
         totalAmount: fee.totalAmount,
         paidAmount: fee.paidAmount,
-        fineAmount: fee.fineAmount || 0,
+        fineAmount: computedFine,
         finePerDay: fee.finePerDay || 0,
-        pendingAmount: fee.pendingAmount,
+        pendingAmount,
         status: fee.status,
         dueDate: fee.dueDate,
         academicYear: fee.academicYear,
         semester: fee.semester,
         feeStructure: fee.feeStructure || [],
-        dueAlert: fee.status === "overdue"
-          ? `Due date is over. Fine added: ${formatCurrency(fee.fineAmount || 0)}`
+        dueAlert: pendingAmount > 0 && today > (fee.dueDate || 0)
+          ? `Due date is over. Fine added: ${formatCurrency(computedFine || 0)}`
           : null,
         upi: {
           id: UPI_ID,
           name: UPI_PAYEE_NAME,
-          amount: fee.pendingAmount,
+          amount: pendingAmount,
           purpose: `Semester ${fee.semester} fee`,
-          url: `upi://pay?pa=${encodeURIComponent(UPI_ID)}&pn=${encodeURIComponent(UPI_PAYEE_NAME)}&am=${encodeURIComponent(fee.pendingAmount)}&cu=INR&tn=${encodeURIComponent(`Fee payment ${student.rollNumber}`)}`,
+          url: `upi://pay?pa=${encodeURIComponent(UPI_ID)}&pn=${encodeURIComponent(UPI_PAYEE_NAME)}&am=${encodeURIComponent(pendingAmount)}&cu=INR&tn=${encodeURIComponent(`Fee payment ${student.rollNumber}`)}`,
         },
       }
     });
@@ -467,6 +483,102 @@ export const getFeeReceipt = async (req, res) => {
     });
   } catch(e) {
     res.status(500).json({ error: 'Failed to fetch receipt' });
+  }
+};
+
+const createReceiptPdfBuffer = ({ receipt, student }) => {
+  const title = 'Payment Receipt';
+  const lines = [];
+  lines.push(title);
+  lines.push('');
+  lines.push(`Receipt No: ${receipt.receiptNumber || ''}`);
+  lines.push(`Date: ${receipt.date || ''}`);
+  lines.push('');
+  lines.push(`Student Name: ${receipt.studentName || ''}`);
+  lines.push(`Roll No: ${receipt.rollNo || ''}`);
+  lines.push('');
+  lines.push(`Amount Paid: Rs.${Number(receipt.amountPaid || 0).toLocaleString('en-IN')}`);
+  lines.push(`Payment Method: ${receipt.paymentMethod || ''}`);
+  lines.push(`Purpose: ${receipt.purpose || ''}`);
+  lines.push(`Transaction ID: ${receipt.transactionId || ''}`);
+
+  const escape = escapePdfText;
+  const streamLines = [];
+  streamLines.push('BT');
+  streamLines.push('/F1 12 Tf');
+  streamLines.push('1 0 0 1 50 780 Tm');
+  lines.forEach((line) => {
+    streamLines.push(`(${escape(line)}) Tj`);
+    streamLines.push('T*');
+  });
+  streamLines.push('ET');
+
+  const stream = streamLines.join('\n');
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman >>',
+    `<< /Length ${Buffer.byteLength(stream, 'utf8')} >>\nstream\n${stream}\nendstream`,
+  ];
+
+  let pdf = '%PDF-1.4\n';
+  const offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(Buffer.byteLength(pdf, 'utf8'));
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xrefOffset = Buffer.byteLength(pdf, 'utf8');
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  offsets.slice(1).forEach((offset) => {
+    pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
+  });
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+
+  return Buffer.from(pdf, 'utf8');
+};
+
+// GET /api/student/fees/receipt/:id/download
+export const downloadFeeReceipt = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { id } = req.params;
+    const student = await Student.findOne({ userId }).populate('userId', 'name');
+    if (!student) return res.status(404).json({ error: 'Student profile not found' });
+
+    const fee = await Fee.findOne({
+      studentId: student._id,
+      $or: [
+        ...(mongoose.Types.ObjectId.isValid(id) ? [{ 'payments._id': id }] : []),
+        { 'payments.receiptNumber': id },
+      ],
+    });
+    if (!fee) return res.status(404).json({ error: 'Fee record not found' });
+
+    const payment = fee.payments?.find(p => p._id.toString() === id || p.receiptNumber === id);
+    if (!payment) return res.status(404).json({ error: 'Receipt not found' });
+
+    const user = await User.findById(userId);
+    const receipt = {
+      studentName: user?.name || 'Unknown',
+      rollNo: student.rollNumber || 'N/A',
+      date: payment.date ? new Date(payment.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A',
+      amountPaid: payment.amount || 0,
+      paymentMethod: payment.method || 'N/A',
+      purpose: payment.purpose || fee.feeStructure?.map(item => item.name).join(', ') || `Semester ${fee.semester} Fee`,
+      receiptNumber: payment.receiptNumber || `RCP-${Date.now()}`,
+      transactionId: payment.transactionId || 'N/A',
+    };
+
+    const pdf = createReceiptPdfBuffer({ receipt, student });
+    const fileName = `receipt_${(receipt.receiptNumber || id).replace(/[^a-z0-9_-]+/gi, '_')}.pdf`;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Length', pdf.length);
+    res.send(pdf);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to download receipt' });
   }
 };
 

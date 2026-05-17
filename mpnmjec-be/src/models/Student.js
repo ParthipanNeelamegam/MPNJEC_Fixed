@@ -43,6 +43,11 @@ const studentSchema = new mongoose.Schema({
   section: {
     type: String,
   },
+  studentType: {
+    type: String,
+    enum: ["hosteller", "day_scholar"],
+    default: "day_scholar",
+  },
   semester: {
     type: Number,
     min: 1,

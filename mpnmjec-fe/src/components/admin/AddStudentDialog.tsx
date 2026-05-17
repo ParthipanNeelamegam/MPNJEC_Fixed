@@ -13,12 +13,32 @@ interface AddStudentDialogProps {
   onSuccess?: () => void;
 }
 
+type StudentType = 'hosteller' | 'day_scholar';
+
+interface FormData {
+  name: string;
+  email: string;
+  fatherName: string;
+  motherName: string;
+  dob: string;
+  aadhaar: string;
+  mobile: string;
+  parentMobile: string;
+  address: string;
+  rollNumber: string;
+  department: string;
+  year: string;
+  section: string;
+  admissionYear: string;
+  studentType: StudentType;
+}
+
 export default function AddStudentDialog({ trigger, onSuccess }: AddStudentDialogProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [credentials, setCredentials] = useState<{ username: string; password: string } | null>(null);
   const [copied, setCopied] = useState<'username' | 'password' | null>(null);
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<FormData>({
     name: '',
     email: '',
     fatherName: '',
@@ -33,15 +53,16 @@ export default function AddStudentDialog({ trigger, onSuccess }: AddStudentDialo
     year: '',
     section: '',
     admissionYear: new Date().getFullYear().toString(),
+    studentType: 'day_scholar',
   });
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData(prev => ({ ...prev, [name]: value } as FormData));
   };
 
-  const handleSelectChange = (name: string, value: string) => {
-    setFormData(prev => ({ ...prev, [name]: value }));
+  const handleSelectChange = (name: keyof FormData, value: string) => {
+    setFormData(prev => ({ ...prev, [name]: value } as FormData));
   };
 
   const resetForm = () => {
@@ -60,6 +81,7 @@ export default function AddStudentDialog({ trigger, onSuccess }: AddStudentDialo
       year: '',
       section: '',
       admissionYear: new Date().getFullYear().toString(),
+      studentType: 'day_scholar',
     });
     setCredentials(null);
     setCopied(null);
@@ -96,6 +118,7 @@ export default function AddStudentDialog({ trigger, onSuccess }: AddStudentDialo
         year: parseInt(formData.year),
         section: formData.section,
         admissionYear: parseInt(formData.admissionYear),
+        studentType: formData.studentType,
       });
       
       const data: StudentCreateResponse = response.data;
@@ -333,7 +356,7 @@ export default function AddStudentDialog({ trigger, onSuccess }: AddStudentDialo
                   </Select>
                 </div>
               </div>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-4 gap-4">
                 <div className="space-y-2">
                   <Label>Year *</Label>
                   <Select value={formData.year} onValueChange={(v) => handleSelectChange('year', v)}>
@@ -357,6 +380,18 @@ export default function AddStudentDialog({ trigger, onSuccess }: AddStudentDialo
                     value={formData.section}
                     onChange={handleInputChange}
                   />
+                </div>
+                <div className="space-y-2">
+                  <Label>Student Type</Label>
+                  <Select value={formData.studentType} onValueChange={(v) => handleSelectChange('studentType', v)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="day_scholar">Day Scholar</SelectItem>
+                      <SelectItem value="hosteller">Hosteller</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="student-admission-year">Admission Year</Label>
