@@ -24,53 +24,63 @@ export default function LoginPage() {
   const [credentials, setCredentials] = useState({ email: '', password: '' });
 
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!credentials.email || !credentials.password) {
-      toast.error('Please fill in all fields');
+const handleLogin = async (e: React.FormEvent) => {
+  e.preventDefault();
+
+  if (!credentials.email || !credentials.password) {
+    toast.error('Please fill in all fields');
+    return;
+  }
+
+  try {
+    const res = await login(credentials.email, credentials.password);
+
+    if (selectedRole.toLowerCase() !== res.user.role.toLowerCase()) {
+      toast.error('Selected role does not match your account role.');
       return;
     }
-    try {
-      const res = await login(credentials.email, credentials.password);
-      if (selectedRole !== res.user.role) {
-        toast.error('Selected role does not match your account role.');
-        return;
-      }
-     
-      
-      setAccessToken(res.accessToken);
-      toast.success('Welcome back!');
-      // role-based redirect
-      switch (res.user.role) {
-        case 'student':
-          navigate('/student/dashboard');
-          break;
-        case 'faculty':
-          navigate('/faculty/dashboard');
-          break;
-        case 'hod':
-          navigate('/hod/dashboard');
-          break;
-        case 'admin':
-          navigate('/admin/dashboard');
-          break;
-        case 'principal':
-          navigate('/principal/dashboard');
-          break;
-        case 'librarian':
-          navigate('/library/dashboard');
-          break;
-        case 'superUser':
-          navigate('/admin/dashboard'); // SuperUser uses admin dashboard
-          break;
-        default:
-          navigate('/');
-      }
-    } catch (err: any) {
-      
-      toast.error(err?.response?.data?.message || 'Login failed');
+
+    // ✅ STORE TOKEN
+    setAccessToken(res.accessToken);
+localStorage.setItem("token", res.accessToken);
+    // 🔥🔥🔥 THIS IS THE MAIN FIX
+    localStorage.setItem("user", JSON.stringify(res.user));
+    if (res.user.role === "hod") {
+  localStorage.setItem("hodId", res.user.department.toUpperCase());
+}
+    console.log("Saved User:", res.user); // for debugging
+
+    toast.success('Welcome back!');
+
+    // role-based redirect
+    switch (res.user.role) {
+      case 'student':
+        navigate('/student/dashboard');
+        break;
+      case 'faculty':
+        navigate('/faculty/dashboard');
+        break;
+      case 'hod':
+        navigate('/hod/dashboard');
+        break;
+      case 'admin':
+        navigate('/admin/dashboard');
+        break;
+      case 'principal':
+        navigate('/principal/dashboard');
+        break;
+      case 'librarian':
+        navigate('/library/dashboard');
+        break;
+    
+      default:
+        navigate('/');
     }
-  };
+
+  } catch (err: any) {
+    toast.error(err?.response?.data?.message || 'Login failed');
+  }
+};
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row">

@@ -1,7 +1,6 @@
 import HOD from "../models/HOD.js";
 import Attendance from "../models/Attendance.js";
 import Leave from "../models/Leave.js";
-import LeaveRequest from "../models/LeaveRequest.js";
 import Student from "../models/Student.js";
 import Faculty from "../models/Faculty.js";
 import User from "../models/User.js";
@@ -10,7 +9,6 @@ import TimeTable from "../models/TimeTable.js";
 import PeriodConfig from "../models/PeriodConfig.js";
 import Marks from "../models/Marks.js";
 import Class from "../models/Class.js";
-import Achievement from "../models/Achievement.js";
 import { getAttendanceStats } from "../utils/period.js";
 import {
   validateScheduleConflicts,
@@ -148,32 +146,34 @@ export const getFacultySchedule = async (req, res) => {
       return res.status(403).json({ error: "Faculty not in your department" });
     }
 
-    // Build filter for timetable — use correct model field names
+    // Build filter for timetable
     const filter = {
-      facultyId: faculty._id,
+      faculty: faculty._id,
+      department: hod.department,
+      isActive: true,
     };
     if (year) filter.year = parseInt(year);
     if (section) filter.section = section;
 
     const timetableEntries = await TimeTable.find(filter)
-      .populate("courseId", "code name")
-      .sort({ dayOfWeek: 1, period: 1 });
+      .populate("course", "code name")
+      .sort({ day: 1, period: 1 });
 
     // Group by day for easier display
     const daysOrder = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
     const scheduleByDay = {};
-
+    
     daysOrder.forEach(day => {
       scheduleByDay[day] = timetableEntries
-        .filter(e => e.dayOfWeek === day)
+        .filter(e => e.day === day)
         .map(e => ({
           id: e._id,
           period: e.period,
-          course: e.courseId ? { code: e.courseId.code, name: e.courseId.name } : null,
-          subject: e.subject || null,
+          course: e.course ? { code: e.course.code, name: e.course.name } : null,
           year: e.year,
           section: e.section,
-          classroom: e.classroom || "TBD",
+          room: e.room || "TBD",
+          type: e.type || "lecture",
         }));
     });
 
@@ -749,39 +749,35 @@ export const getLeaveRequests = async (req, res) => {
       return res.status(404).json({ error: "HOD profile not found" });
     }
 
-    // Build filter using LeaveRequest model
-    const filter = {
-      department: { $regex: new RegExp(`^${hod.department}$`, 'i') },
-      applicantRole: { $in: ['student', 'faculty'] },
-    };
-    if (status) {
-      // Accept both cases
-      filter.finalStatus = status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
-    }
+    // Get students from HOD's department (active only)
+    const students = await Student.find({ department: hod.department, status: 'active' });
+    const studentIds = students.map(s => s._id);
 
-    const leaves = await LeaveRequest.find(filter)
-      .populate('applicantUserId', 'name email')
-      .sort({ appliedAt: -1 });
+    const filter = { studentId: { $in: studentIds } };
+    if (status) filter.status = status;
+
+    const leaves = await Leave.find(filter)
+      .populate({
+        path: "studentId",
+        populate: { path: "userId", select: "name email" }
+      })
+      .populate("reviewedBy", "name")
+      .sort({ createdAt: -1 });
 
     res.json({
       leaves: leaves.map(l => ({
         id: l._id,
-        applicantRole: l.applicantRole,
-        applicantId: l.applicantId,
-        studentName: l.applicantUserId?.name || 'Unknown',
-        studentEmail: l.applicantUserId?.email,
-        rollNumber: l.rollNumber,
-        empId: l.empId,
-        department: l.department,
-        leaveType: l.leaveType,
-        fromDate: l.fromDate,
-        toDate: l.toDate,
+        studentId: l.studentId?._id,
+        studentName: l.studentId?.userId?.name,
+        studentEmail: l.studentId?.userId?.email,
+        rollNumber: l.studentId?.rollNumber,
+        date: l.date,
         reason: l.reason,
-        finalStatus: l.finalStatus,
-        facultyApproval: l.facultyApproval,
-        hodApproval: l.hodApproval,
-        principalApproval: l.principalApproval,
-        appliedAt: l.appliedAt,
+        status: l.status,
+        appliedAt: l.createdAt,
+        reviewedBy: l.reviewedBy?.name,
+        reviewedAt: l.reviewedAt,
+        remarks: l.remarks,
       })),
     });
   } catch (error) {
@@ -796,50 +792,55 @@ export const updateLeave = async (req, res) => {
     const { id } = req.params;
     const { status, remarks } = req.body;
 
-    if (!status || !["approved", "rejected"].includes(status.toLowerCase())) {
+    if (!status || !["approved", "rejected"].includes(status)) {
       return res.status(400).json({ error: "Status must be 'approved' or 'rejected'" });
     }
 
+    // Get HOD's department
     const hod = await HOD.findOne({ userId });
     if (!hod) {
       return res.status(404).json({ error: "HOD profile not found" });
     }
 
-    const leave = await LeaveRequest.findById(id);
+    const leave = await Leave.findById(id).populate("studentId");
     if (!leave) {
       return res.status(404).json({ error: "Leave request not found" });
     }
 
-    // Verify belongs to HOD's department
-    if (leave.department?.toLowerCase() !== hod.department?.toLowerCase()) {
-      return res.status(403).json({ error: "Cannot modify leave outside your department" });
+    // Verify student belongs to HOD's department
+    if (leave.studentId.department !== hod.department) {
+      return res.status(403).json({ error: "Cannot modify leave for students outside your department" });
     }
 
-    const normalizedStatus = status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
+    // Update leave
+    leave.status = status;
+    leave.reviewedBy = userId;
+    leave.reviewedAt = new Date();
+    if (remarks) leave.remarks = remarks;
 
-    // Set HOD approval
-    leave.hodApproval = {
-      status: normalizedStatus,
-      approvedBy: hod._id,
-      approvedAt: new Date(),
-      remarks,
-    };
-    leave.finalStatus = normalizedStatus;
     await leave.save();
 
+    // If approved, update any attendance records for this date to 'leave'
+    if (status === "approved") {
+      await Attendance.updateMany(
+        { studentId: leave.studentId._id, date: leave.date },
+        { status: "leave" }
+      );
+    }
+
     res.json({
-      message: `Leave ${normalizedStatus.toLowerCase()} successfully`,
+      message: `Leave ${status} successfully`,
       leave: {
         id: leave._id,
-        finalStatus: leave.finalStatus,
-        hodApproval: leave.hodApproval,
+        status: leave.status,
+        reviewedAt: leave.reviewedAt,
+        remarks: leave.remarks,
       },
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 };
-
 
 // ========================
 // DASHBOARD STATS
@@ -1116,205 +1117,6 @@ export const getSubjectAnalytics = async (req, res) => {
 // REPORTS
 // ========================
 
-const isEmptyReportData = (data) => {
-  if (!data) return true;
-  if (Array.isArray(data)) return data.length === 0;
-  return typeof data === "object" && Object.keys(data).length === 0;
-};
-
-const buildHodReportData = async (hod, { type, year, section, start, end }) => {
-  const normalizedType = type === "performance" ? "academic" : type;
-  const studentFilter = { department: hod.department, status: "active" };
-  if (year) studentFilter.year = parseInt(year);
-  if (section) studentFilter.section = section;
-
-  if (normalizedType === "attendance") {
-    const students = await Student.find(studentFilter).populate("userId", "name").lean();
-    const rows = await Promise.all(students.map(async (student) => {
-      const records = await Attendance.find({
-        studentId: student._id,
-        date: { $gte: start, $lte: end },
-      }).select("status").lean();
-      const total = records.length;
-      const present = records.filter(r => r.status === "present").length;
-      const absent = records.filter(r => r.status === "absent").length;
-      const leave = records.filter(r => r.status === "leave").length;
-      return {
-        name: student.userId?.name,
-        rollNumber: student.rollNumber,
-        year: student.year,
-        section: student.section,
-        total,
-        present,
-        absent,
-        leave,
-        percentage: total > 0 ? Math.round((present / total) * 100) : 0,
-      };
-    }));
-
-    const totalClasses = rows.reduce((sum, row) => sum + row.total, 0);
-    const totalPresent = rows.reduce((sum, row) => sum + row.present, 0);
-    return {
-      summary: {
-        totalStudents: students.length,
-        totalAttendanceRecords: totalClasses,
-        presentRecords: totalPresent,
-        attendancePercentage: totalClasses ? Math.round((totalPresent / totalClasses) * 100) : 0,
-      },
-      students: rows,
-    };
-  }
-
-  if (normalizedType === "academic") {
-    const students = await Student.find(studentFilter)
-      .populate("userId", "name")
-      .select("rollNumber year section semester cgpa attendance")
-      .lean();
-    const studentIds = students.map(s => s._id);
-    const marks = await Marks.find({ studentId: { $in: studentIds } })
-      .populate({ path: "studentId", select: "rollNumber userId", populate: { path: "userId", select: "name" } })
-      .populate("courseId", "code name semester")
-      .lean();
-
-    const markSummary = marks.reduce((acc, mark) => {
-      const id = mark.studentId?._id?.toString();
-      if (!id) return acc;
-      if (!acc[id]) acc[id] = { subjects: 0, passed: 0, arrears: 0, totalMarks: 0 };
-      acc[id].subjects += 1;
-      acc[id].passed += mark.isPassed ? 1 : 0;
-      acc[id].arrears += mark.isPassed ? 0 : 1;
-      acc[id].totalMarks += mark.total || 0;
-      return acc;
-    }, {});
-
-    return {
-      summary: {
-        totalStudents: students.length,
-        averageCgpa: students.length ? Number((students.reduce((sum, s) => sum + (s.cgpa || 0), 0) / students.length).toFixed(2)) : 0,
-        averageAttendance: students.length ? Number((students.reduce((sum, s) => sum + (s.attendance || 0), 0) / students.length).toFixed(2)) : 0,
-        marksEntries: marks.length,
-      },
-      students: students.map(student => {
-        const summary = markSummary[student._id.toString()] || { subjects: 0, passed: 0, arrears: 0, totalMarks: 0 };
-        return {
-          name: student.userId?.name,
-          rollNumber: student.rollNumber,
-          year: student.year,
-          section: student.section,
-          semester: student.semester,
-          cgpa: student.cgpa,
-          attendance: student.attendance,
-          subjects: summary.subjects,
-          passed: summary.passed,
-          arrears: summary.arrears,
-          averageMarks: summary.subjects ? Math.round(summary.totalMarks / summary.subjects) : 0,
-        };
-      }),
-    };
-  }
-
-  if (normalizedType === "faculty") {
-    const faculty = await Faculty.find({ department: hod.department })
-      .populate("userId", "name email")
-      .populate("assignedCourses", "code name year semester")
-      .lean();
-
-    return {
-      summary: {
-        totalFaculty: faculty.length,
-        activeFaculty: faculty.filter(f => f.status === "active").length,
-        classAdvisors: faculty.filter(f => f.isClassAdvisor).length,
-      },
-      faculty: faculty.map(f => ({
-        name: f.userId?.name,
-        email: f.userId?.email,
-        empId: f.empId,
-        designation: f.designation,
-        experience: f.experience,
-        status: f.status,
-        isClassAdvisor: f.isClassAdvisor,
-        advisorFor: f.advisorFor,
-        assignedCourses: (f.assignedCourses || []).map(c => ({
-          code: c.code,
-          name: c.name,
-          year: c.year,
-          semester: c.semester,
-        })),
-      })),
-    };
-  }
-
-  if (normalizedType === "placement") {
-    const achievements = await Achievement.find({
-      department: hod.department,
-      type: "placement",
-      date: { $gte: start, $lte: end },
-    }).sort({ date: -1 }).lean();
-
-    return {
-      summary: {
-        totalPlacementRecords: achievements.length,
-        verifiedRecords: achievements.filter(a => a.isVerified).length,
-        highlightedRecords: achievements.filter(a => a.isHighlighted).length,
-      },
-      placements: achievements.map(a => ({
-        title: a.title,
-        description: a.description,
-        studentName: a.achievedBy?.name,
-        rollNumber: a.achievedBy?.rollNumber,
-        award: a.award,
-        prize: a.prize,
-        companyOrOrganizer: a.organizedBy,
-        date: a.date,
-        status: a.status,
-      })),
-    };
-  }
-
-  if (normalizedType === "overall") {
-    const students = await Student.find(studentFilter).select("_id cgpa attendance").lean();
-    const studentIds = students.map(s => s._id);
-    const [faculty, courses, attendanceRecords, marks, placementCount] = await Promise.all([
-      Faculty.find({ department: hod.department }).select("status isClassAdvisor").lean(),
-      Course.find({ department: hod.department, status: "active" }).select("code").lean(),
-      Attendance.find({ department: hod.department, date: { $gte: start, $lte: end } }).select("status").lean(),
-      Marks.find({ studentId: { $in: studentIds } }).select("isPassed").lean(),
-      Achievement.countDocuments({ department: hod.department, type: "placement", date: { $gte: start, $lte: end } }),
-    ]);
-    const present = attendanceRecords.filter(r => r.status === "present").length;
-    const passed = marks.filter(m => m.isPassed).length;
-
-    return {
-      department: hod.department,
-      dateRange: { start, end },
-      academics: {
-        totalStudents: students.length,
-        averageCgpa: students.length ? Number((students.reduce((sum, s) => sum + (s.cgpa || 0), 0) / students.length).toFixed(2)) : 0,
-        averageAttendance: students.length ? Number((students.reduce((sum, s) => sum + (s.attendance || 0), 0) / students.length).toFixed(2)) : 0,
-        passPercentage: marks.length ? Math.round((passed / marks.length) * 100) : 0,
-      },
-      attendance: {
-        totalRecords: attendanceRecords.length,
-        present,
-        percentage: attendanceRecords.length ? Math.round((present / attendanceRecords.length) * 100) : 0,
-      },
-      faculty: {
-        total: faculty.length,
-        active: faculty.filter(f => f.status === "active").length,
-        classAdvisors: faculty.filter(f => f.isClassAdvisor).length,
-      },
-      courses: { active: courses.length },
-      placements: { records: placementCount },
-    };
-  }
-
-  return {
-    summary: {
-      message: "No report data available for this report type",
-    },
-  };
-};
-
 // GET /api/hod/reports - Get generated reports
 export const getReports = async (req, res) => {
   try {
@@ -1366,13 +1168,7 @@ export const getReports = async (req, res) => {
 export const generateReport = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { category, year, section, startDate, endDate, title } = req.body;
-    const type = String(req.body.type || "").toLowerCase();
-    const allowedTypes = ["academic", "attendance", "faculty", "overall", "placement", "performance"];
-
-    if (!allowedTypes.includes(type)) {
-      return res.status(400).json({ error: "Invalid report type" });
-    }
+    const { type, category, year, section, startDate, endDate, title } = req.body;
 
     const hod = await HOD.findOne({ userId });
     if (!hod) {
@@ -1381,15 +1177,16 @@ export const generateReport = async (req, res) => {
 
     const Report = (await import("../models/Report.js")).default;
 
-    const start = startDate ? new Date(startDate) : new Date(new Date().setMonth(new Date().getMonth() - 1));
-    const end = endDate ? new Date(endDate) : new Date();
+    // Generate report data based on type
     let data = {};
-    const studentFilter = { department: hod.department, status: "active" };
-    if (year) studentFilter.year = parseInt(year);
-    if (section) studentFilter.section = section;
+    const filter = { department: hod.department, status: 'active' };
+    if (year) filter.year = parseInt(year);
+    if (section) filter.section = section;
 
     if (type === "attendance") {
-      const students = await Student.find(studentFilter).populate("userId", "name");
+      const students = await Student.find(filter).populate("userId", "name");
+      const start = startDate ? new Date(startDate) : new Date(new Date().setMonth(new Date().getMonth() - 1));
+      const end = endDate ? new Date(endDate) : new Date();
 
       data = await Promise.all(students.map(async (student) => {
         const records = await Attendance.find({
@@ -1406,162 +1203,24 @@ export const generateReport = async (req, res) => {
           percentage: total > 0 ? Math.round((present / total) * 100) : 0,
         };
       }));
-    } else if (type === "academic" || type === "performance") {
-      const students = await Student.find(studentFilter)
+    } else if (type === "performance") {
+      data = await Student.find(filter)
         .populate("userId", "name")
-        .select("rollNumber year section semester cgpa attendance")
+        .select("rollNumber year section cgpa")
         .lean();
-
-      const studentIds = students.map(s => s._id);
-      const marks = await Marks.find({ studentId: { $in: studentIds } })
-        .populate({ path: "studentId", select: "rollNumber userId", populate: { path: "userId", select: "name" } })
-        .populate("courseId", "code name semester")
-        .lean();
-
-      const markSummary = marks.reduce((acc, mark) => {
-        const id = mark.studentId?._id?.toString();
-        if (!id) return acc;
-        if (!acc[id]) {
-          acc[id] = { subjects: 0, passed: 0, arrears: 0, totalMarks: 0 };
-        }
-        acc[id].subjects += 1;
-        acc[id].passed += mark.isPassed ? 1 : 0;
-        acc[id].arrears += mark.isPassed ? 0 : 1;
-        acc[id].totalMarks += mark.total || 0;
-        return acc;
-      }, {});
-
-      data = {
-        summary: {
-          totalStudents: students.length,
-          averageCgpa: students.length ? Number((students.reduce((sum, s) => sum + (s.cgpa || 0), 0) / students.length).toFixed(2)) : 0,
-          averageAttendance: students.length ? Number((students.reduce((sum, s) => sum + (s.attendance || 0), 0) / students.length).toFixed(2)) : 0,
-          marksEntries: marks.length,
-        },
-        students: students.map(student => {
-          const summary = markSummary[student._id.toString()] || { subjects: 0, passed: 0, arrears: 0, totalMarks: 0 };
-          return {
-            name: student.userId?.name,
-            rollNumber: student.rollNumber,
-            year: student.year,
-            section: student.section,
-            semester: student.semester,
-            cgpa: student.cgpa,
-            attendance: student.attendance,
-            subjects: summary.subjects,
-            passed: summary.passed,
-            arrears: summary.arrears,
-            averageMarks: summary.subjects ? Math.round(summary.totalMarks / summary.subjects) : 0,
-          };
-        }),
-      };
-    } else if (type === "faculty") {
-      const faculty = await Faculty.find({ department: hod.department })
-        .populate("userId", "name email")
-        .populate("assignedCourses", "code name year semester")
-        .lean();
-
-      data = {
-        summary: {
-          totalFaculty: faculty.length,
-          activeFaculty: faculty.filter(f => f.status === "active").length,
-          classAdvisors: faculty.filter(f => f.isClassAdvisor).length,
-        },
-        faculty: faculty.map(f => ({
-          name: f.userId?.name,
-          email: f.userId?.email,
-          empId: f.empId,
-          designation: f.designation,
-          experience: f.experience,
-          status: f.status,
-          isClassAdvisor: f.isClassAdvisor,
-          advisorFor: f.advisorFor,
-          assignedCourses: (f.assignedCourses || []).map(c => ({
-            code: c.code,
-            name: c.name,
-            year: c.year,
-            semester: c.semester,
-          })),
-        })),
-      };
-    } else if (type === "placement") {
-      const achievements = await Achievement.find({
-        department: hod.department,
-        type: "placement",
-        date: { $gte: start, $lte: end },
-      }).sort({ date: -1 }).lean();
-
-      data = {
-        summary: {
-          totalPlacementRecords: achievements.length,
-          verifiedRecords: achievements.filter(a => a.isVerified).length,
-          highlightedRecords: achievements.filter(a => a.isHighlighted).length,
-        },
-        placements: achievements.map(a => ({
-          title: a.title,
-          description: a.description,
-          studentName: a.achievedBy?.name,
-          rollNumber: a.achievedBy?.rollNumber,
-          award: a.award,
-          prize: a.prize,
-          companyOrOrganizer: a.organizedBy,
-          date: a.date,
-          status: a.status,
-        })),
-      };
-    } else if (type === "overall") {
-      const overallStudents = await Student.find(studentFilter).select("_id cgpa attendance").lean();
-      const overallStudentIds = overallStudents.map(s => s._id);
-      const [students, faculty, courses, attendanceRecords, marks, placementCount] = await Promise.all([
-        Promise.resolve(overallStudents),
-        Faculty.find({ department: hod.department }).select("status isClassAdvisor").lean(),
-        Course.find({ department: hod.department, status: "active" }).select("code").lean(),
-        Attendance.find({ department: hod.department, date: { $gte: start, $lte: end } }).select("status").lean(),
-        Marks.find({ studentId: { $in: overallStudentIds } }).select("isPassed").lean(),
-        Achievement.countDocuments({ department: hod.department, type: "placement", date: { $gte: start, $lte: end } }),
-      ]);
-
-      const present = attendanceRecords.filter(r => r.status === "present").length;
-      const passed = marks.filter(m => m.isPassed).length;
-      data = {
-        department: hod.department,
-        dateRange: { start, end },
-        academics: {
-          totalStudents: students.length,
-          averageCgpa: students.length ? Number((students.reduce((sum, s) => sum + (s.cgpa || 0), 0) / students.length).toFixed(2)) : 0,
-          averageAttendance: students.length ? Number((students.reduce((sum, s) => sum + (s.attendance || 0), 0) / students.length).toFixed(2)) : 0,
-          passPercentage: marks.length ? Math.round((passed / marks.length) * 100) : 0,
-        },
-        attendance: {
-          totalRecords: attendanceRecords.length,
-          present,
-          percentage: attendanceRecords.length ? Math.round((present / attendanceRecords.length) * 100) : 0,
-        },
-        faculty: {
-          total: faculty.length,
-          active: faculty.filter(f => f.status === "active").length,
-          classAdvisors: faculty.filter(f => f.isClassAdvisor).length,
-        },
-        courses: {
-          active: courses.length,
-        },
-        placements: {
-          records: placementCount,
-        },
-      };
     }
 
     const report = await Report.create({
-      data: await buildHodReportData(hod, { type, year, section, start, end }),
       title: title || `${type.charAt(0).toUpperCase() + type.slice(1)} Report - ${new Date().toLocaleDateString()}`,
-      type: type === "performance" ? "academic" : type,
+      type,
       category: category || "monthly",
       department: hod.department,
       year,
       section,
-      dateRange: { start, end },
+      dateRange: { start: startDate, end: endDate },
       generatedBy: userId,
       generatedByRole: "hod",
+      data,
     });
 
     res.status(201).json({
@@ -1594,20 +1253,6 @@ export const getReportById = async (req, res) => {
 
     if (!report) {
       return res.status(404).json({ error: "Report not found" });
-    }
-
-    if (isEmptyReportData(report.data)) {
-      const start = report.dateRange?.start || new Date(new Date(report.createdAt).setMonth(new Date(report.createdAt).getMonth() - 1));
-      const end = report.dateRange?.end || report.createdAt || new Date();
-      report.data = await buildHodReportData(hod, {
-        type: report.type,
-        year: report.year,
-        section: report.section,
-        start,
-        end,
-      });
-      report.dateRange = { start, end };
-      await report.save();
     }
 
     res.json({ report });
@@ -1668,23 +1313,18 @@ export const getFacultyWorkload = async (req, res) => {
   }
 };
 
-// GET /api/hod/faculty-list - Get Faculty Names with IDs
+// GET /api/hod/faculty-list - Get All Faculty Names with IDs
 export const getFacultyList = async (req, res) => {
   try {
-    const userId = req.user.id;
-
-    const hod = await HOD.findOne({ userId });
-    if (!hod) {
-      return res.status(404).json({ error: "HOD profile not found" });
-    }
-
-    const faculty = await Faculty.find({ department: hod.department })
-      .populate("userId", "name");
+    const faculty = await Faculty.find()
+      .populate("userId", "name")
+      .sort({ department: 1 });
 
     res.json({
-      faculty: faculty.map(f => ({
+      faculty: faculty.map((f) => ({
         id: f._id,
-        name: f.userId?.name || 'Unknown',
+        name: f.userId?.name || "Unknown",
+        department: f.department,
       })),
     });
   } catch (error) {
@@ -1971,23 +1611,11 @@ export const saveTimetable = async (req, res) => {
       }
     }
 
-    // Upsert entry — allows re-creating a slot that was previously deleted
-    const entry = await TimeTable.findOneAndUpdate(
-      {
-        department: entryData.department,
-        year: entryData.year,
-        section: entryData.section,
-        dayOfWeek: entryData.dayOfWeek,
-        period: entryData.period,
-      },
-      {
-        $set: {
-          ...entryData,
-          conflictOverride: isSuperUser && conflictOverride,
-        },
-      },
-      { upsert: true, new: true }
-    );
+    // Create entry
+    const entry = await TimeTable.create({
+      ...entryData,
+      conflictOverride: isSuperUser && conflictOverride,
+    });
 
     res.status(201).json({
       message: "Timetable entry created",

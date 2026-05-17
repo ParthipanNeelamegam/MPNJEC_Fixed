@@ -14,6 +14,11 @@ import DesktopSidebar from '../shared/DesktopSidebar';
 import MobileNav from '../shared/MobileNav';
 import { toast } from 'sonner';
 import { getDepartmentStats, getFacultyWorkload, getFacultyList, getSubjectsList, saveTimetable as saveTimetableApi, getTimetable, getTodaySchedule, getStudentsByCourse, takeAttendance } from '../../services/hodService';
+import { sendRequest } from '../../services/hodService';
+import axios from "axios";
+import NotificationBell from '../common/NotificationBell';
+import { useNavigate } from "react-router-dom";
+
 
 interface DepartmentStats {
   totalStudents: number;
@@ -95,17 +100,153 @@ type WeeklyTimetable = {
   };
 };
 
+type TimetableRequest = {
+  _id: string;
+  fromHod?: string;
+  toHod?: string;
+  year?: number | string;
+  reason?: string;
+  status: string;
+  approvedAt?: string;
+  freePeriods?: Record<string, Record<string, boolean>>;
+};
+
 export default function HODDashboard() {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [departmentStats, setDepartmentStats] = useState<DepartmentStats>({
     totalStudents: 0,
     totalFaculty: 0,
     pendingLeaveRequests: 0,
   });
-  const [department, setDepartment] = useState('');
+
+  const [toHod, setToHod] = useState('HOD2')
+  const [department, setDepartment] = useState("");
+  const [year, setYear] = useState("");
+const [reason, setReason] = useState("");
+const [message, setMessage] = useState("");
+const [submitted, setSubmitted] = useState(false);
   const [facultyWorkload, setFacultyWorkload] = useState<FacultyWorkloadItem[]>([]);
-  const [facultyList, setFacultyList] = useState<{id: string; name: string}[]>([]);
+const [facultyList, setFacultyList] = useState<
+  { id: string; name: string; department: string }[]
+>([]);
   const [subjects, setSubjects] = useState<string[]>([]);
+const [showRequests, setShowRequests] = useState(false);
+  const [requests, setRequests] = useState<TimetableRequest[]>([]);
+const [confirmId, setConfirmId] = useState<string | null>(null);
+const [approvedRequests, setApprovedRequests] = useState<TimetableRequest[]>([]);
+const [isSubmitting, setIsSubmitting] = useState(false);
+const [selectedPeriods, setSelectedPeriods] = useState<any>({});
+
+const fetchRequests = async () => {
+  try {
+    const hodId = localStorage.getItem("hodId")?.toUpperCase();
+    const token = localStorage.getItem("accessToken");
+
+    if (!hodId) {
+      setRequests([]);
+      setApprovedRequests([]);
+      return;
+    }
+
+    const res = await axios.get(
+      `http://localhost:5000/api/request/requests/${hodId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    const requestData: TimetableRequest[] = Array.isArray(res.data) ? res.data : [];
+
+    // ✅ Pending (for HOD2 inbox)
+    const activeRequests = requestData.filter(
+      (req) => req.status === "PENDING"
+    );
+
+    // ✅ Approved (for HOD1 responses)
+    const approvedRequests = requestData.filter(
+      (req) => req.status === "APPROVED"
+    );
+
+    setRequests(activeRequests);           // pending list
+    setApprovedRequests(approvedRequests); // approved list
+
+  } catch (error) {
+    console.error(error);
+  }
+};
+// ✅ ADD HERE 👇👇👇
+const handleReject = async (id: string) => {
+  try {
+    const token = localStorage.getItem("accessToken");
+
+    await axios.put(
+      `http://localhost:5000/api/request/reject/${id}`,
+      {},
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    toast.error("Request rejected ❌");
+    fetchRequests();
+
+  } catch (error) {
+    console.error(error);
+  }
+};
+
+const submitFreePeriods = async (req: TimetableRequest) => {
+  try {
+    const token = localStorage.getItem("accessToken");
+
+    await axios.put(
+      `http://localhost:5000/api/request/approve/${req._id}`,
+      {
+        freePeriods: selectedPeriods,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    toast.success("Free periods submitted successfully ✅");
+
+    setConfirmId(null);
+
+    fetchRequests();
+
+  } catch (error) {
+    console.error(error);
+
+    toast.error("Failed to submit free periods");
+  }
+};
+
+const handleCheckbox = (day: string, period: string) => {
+  setSelectedPeriods((prev: any) => ({
+    ...prev,
+    [day]: {
+      ...prev[day],
+      [period]: !prev?.[day]?.[period],
+    },
+  }));
+};
+useEffect(() => {
+  fetchRequests();
+}, []);
+
+   // ✅ Validation
+ const isFormValid =
+  year !== "" &&
+  reason.trim() !== "" &&
+  toHod !== "";
 
   // Timetable Year/Section filters
   const [timetableYear, setTimetableYear] = useState<number>(1);
@@ -159,6 +300,7 @@ export default function HODDashboard() {
           getFacultyList(),
           getSubjectsList(),
           getTimetable(),
+
           getTodaySchedule().catch(() => ({ data: { schedule: [], day: '', date: '' } }))
         ]);
         
@@ -173,9 +315,15 @@ export default function HODDashboard() {
         setFacultyWorkload(workloadRes.data.workload || []);
         // Faculty list can be objects {id, name} or strings (legacy)
         const rawFaculty = facultyRes.data.faculty || [];
-        const formattedFaculty = rawFaculty.map((f: any) => 
-          typeof f === 'string' ? { id: '', name: f } : { id: f.id, name: f.name }
-        );
+        const formattedFaculty = rawFaculty.map((f: any) =>
+  typeof f === 'string'
+    ? { id: '', name: f, department: '' }
+    : {
+        id: f.id,
+        name: f.name,
+        department: f.department,
+      }
+);
         setFacultyList(formattedFaculty);
         
         // Use API data or fallback to static data
@@ -270,6 +418,42 @@ export default function HODDashboard() {
 
   const markAllPresent = () => setAttendanceData(prev => prev.map(s => ({ ...s, present: true })));
   const markAllAbsent = () => setAttendanceData(prev => prev.map(s => ({ ...s, present: false })));
+const handleSend = async () => {
+  if (!year || !reason.trim() || !toHod || isSubmitting) {
+    setMessage("❌ Fill all fields");
+    setSubmitted(true);
+    return;
+  }
+
+  try {
+    setIsSubmitting(true);
+
+    const user = JSON.parse(localStorage.getItem("user") || "{}");
+
+    await sendRequest({
+      fromHod: user?.department?.toUpperCase(),
+      toHod: toHod.toUpperCase(),
+      year,
+      reason,
+    });
+
+    // ✅ SUCCESS
+    setMessage("✅ Request sent successfully");
+    setSubmitted(true);
+
+    // ✅ RESET FORM
+    setToHod("");
+    setYear("");
+    setReason("");
+
+  } catch (error) {
+    console.error(error);
+    setMessage("❌ Failed to send request");
+    setSubmitted(true);
+  } finally {
+    setIsSubmitting(false);
+  }
+};
 
   const submitAttendance = async () => {
     if (!selectedPeriod?.courseId) {
@@ -461,6 +645,38 @@ export default function HODDashboard() {
     }
   };
 
+  const renderFreePeriods = (periodData: any) => {
+    const entries = Object.entries(periodData || {});
+
+    if (entries.length === 0) {
+      return <p className="text-sm text-gray-500">No free periods were shared.</p>;
+    }
+
+    return entries.map(([day, dayPeriods]) => {
+      const selected = Object.entries(dayPeriods || {})
+        .filter(([_, checked]) => Boolean(checked))
+        .map(([period]) => period);
+
+      if (selected.length === 0) return null;
+
+      return (
+        <div key={day} className="mb-3">
+          <div className="font-semibold text-gray-700">{day}</div>
+          <div className="flex gap-2 mt-1 flex-wrap">
+            {selected.map((period) => (
+              <span
+                key={period}
+                className="bg-green-200 text-green-800 px-3 py-1 rounded-full text-sm"
+              >
+                {period}
+              </span>
+            ))}
+          </div>
+        </div>
+      );
+    });
+  };
+
   if (loading) {
     return (
       <div className="flex h-screen overflow-hidden">
@@ -478,11 +694,23 @@ export default function HODDashboard() {
       <DesktopSidebar items={navItems} title="HOD Portal" subtitle="MPNMJEC ERP" />
       
       <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="bg-white border-b border-gray-200 p-4 md:p-6">
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-900">HOD Dashboard</h1>
-          <p className="text-gray-600">{department ? department.toUpperCase() : 'Department'}</p>
-        </header>
+        <header className="bg-white border-b border-gray-200 p-4 md:p-6 flex justify-between items-center">
+  
+  <div>
+    <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
+      HOD Dashboard
+    </h1>
+    <p className="text-gray-600">
+      {department ? department.toUpperCase() : 'Department'}
+    </p>
+  </div>
 
+  <NotificationBell
+    count={requests.length}
+    onClick={() => navigate("/hod/requests")}
+  />
+
+</header>
         <main className="flex-1 overflow-y-auto p-4 md:p-6 pb-24 md:pb-6">
           <div className="grid md:grid-cols-3 gap-4 mb-6">
             <Card className="p-6 bg-gradient-to-br from-blue-500 to-indigo-600 text-white border-0 shadow-xl">
@@ -653,9 +881,11 @@ export default function HODDashboard() {
                                 <SelectValue placeholder="Select Faculty" />
                               </SelectTrigger>
                               <SelectContent>
-                                {facultyList.map(f => (
-                                  <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>
-                                ))}
+                              {facultyList.map((f) => (
+  <SelectItem key={f.id} value={f.id}>
+    {f.name} ({f.department})
+  </SelectItem>
+))}
                               </SelectContent>
                             </Select>
                           </div>
@@ -687,7 +917,88 @@ export default function HODDashboard() {
                         </div>
                       </Card>
                     </TabsContent>
+<div className="p-6 rounded-xl bg-blue-50 border border-blue-200 shadow-sm mt-6">
+  <h3 className="text-lg font-semibold text-gray-900 mb-4">
+    📩 Send Request
+  </h3>
 
+  <div className="grid md:grid-cols-2 gap-4">
+    {/* Department */}
+   {/* To HOD */}
+<div>
+  <label className="text-sm font-medium text-gray-700">
+    To HOD
+  </label>
+  <select
+    value={toHod}
+    onChange={(e) => setToHod(e.target.value)}
+    className="mt-1 w-full p-2 rounded-md border border-gray-300"
+  >
+    <option value="">Select HOD</option>
+    <option value="CSE">CSE</option>
+    <option value="IT">IT</option>
+    <option value="ECE">ECE</option>
+    <option value="EEE">EEE</option>
+    <option value="MECH">MECH</option>
+    <option value="CIVIL">CIVIL</option>
+  </select>
+</div>
+
+    {/* Year */}
+    <div>
+      <label className="text-sm font-medium text-gray-700">
+        Year
+      </label>
+      <select
+        value={year}
+        onChange={(e) => setYear(e.target.value)}
+        className="mt-1 w-full p-2 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-400"
+      >
+        <option value="">Select Year</option>
+        <option value="1">1st Year</option>
+        <option value="2">2nd Year</option>
+        <option value="3">3rd Year</option>
+        <option value="4">4th Year</option>
+      </select>
+    </div>
+  </div>
+
+  {/* Reason */}
+  <div className="mt-4">
+    <label className="text-sm font-medium text-gray-700">
+      Reason
+    </label>
+    <textarea
+      value={reason}
+      onChange={(e) => setReason(e.target.value)}
+      placeholder="Enter reason..."
+      className="mt-1 w-full p-2 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-400"
+    />
+  </div>
+
+  {/* Button */}
+  <div className="flex gap-3 mt-5">
+  <button
+  onClick={handleSend}
+  disabled={!isFormValid || isSubmitting}
+  className={`w-full mt-3 py-2 rounded-md text-white font-medium transition ${
+    isFormValid && !isSubmitting
+      ? "bg-green-600 hover:bg-green-700 cursor-pointer"
+      : "bg-gray-400 cursor-not-allowed opacity-70"
+  }`}
+>
+  {isSubmitting ? "Sending..." : "Send Request"}
+</button>
+  </div>
+
+  {/* Message */}
+  {submitted && (
+  <p className="mt-3 text-sm font-medium text-gray-800">
+    {message}
+  </p>
+)}
+  
+</div>
                     <TabsContent value="settings" className="space-y-6 mt-6">
                       <Card className="p-6 bg-white border-0 shadow-lg">
                         <div className="space-y-6">
@@ -796,6 +1107,245 @@ export default function HODDashboard() {
               </div>
             </Card>
           )}
+
+         {/* Timetable Request Header */}
+      
+  <div className="p-4">
+
+    {/* HEADER */}
+    <div className="flex items-center justify-between bg-white shadow-md rounded-xl p-4 border border-gray-200 mb-6">
+      <div className="text-lg font-bold text-gray-800">
+        Timetable Request
+      </div>
+
+      <div className="flex items-center gap-3">
+
+        {/* 🔔 Notification */}
+        <div className="relative text-xl">
+          🔔
+          {requests.length > 0 && (
+            <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full"></span>
+          )}
+        </div>
+
+        {/* Toggle Button */}
+        <button
+          onClick={() => setShowRequests(!showRequests)}
+          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm"
+        >
+          {showRequests ? "Hide" : "View"} Request
+        </button>
+      </div>
+    </div>
+
+    {/* REQUEST LIST */}
+    {showRequests && (
+      <div>
+        {requests?.length > 0 ? (
+          requests.map((req: any) => (
+            <div
+              key={req._id}
+              className="bg-white rounded-xl shadow-md border border-gray-200 p-5 mb-5"
+            >
+              <div className="flex justify-between items-start">
+
+                {/* LEFT SIDE */}
+                <div>
+                  <h2 className="text-md font-bold text-gray-800 mb-2">
+                    📩 Timetable Request
+                  </h2>
+
+                  <p className="text-sm text-gray-700">
+                    <span className="font-semibold">From:</span>{" "}
+                    {req.fromHod || "Unknown"}
+                  </p>
+
+                  <p className="text-sm text-gray-700">
+                    <span className="font-semibold">Year:</span> {req.year}
+                  </p>
+
+                  <p className="text-sm text-gray-600 mt-1">
+                    <span className="font-semibold">Reason:</span>{" "}
+                    {req.reason}
+                  </p>
+                  {req.freePeriods && Object.keys(req.freePeriods).length > 0 && (
+  <div className="mt-4 bg-green-50 border rounded-lg p-4">
+
+    <h3 className="font-bold mb-3 text-green-700">
+      Available Free Periods
+    </h3>
+
+    {Object.entries(req.freePeriods).map(([day, periods]) => (
+      <div key={day} className="mb-3">
+
+        <div className="font-semibold text-gray-700">
+          {day}
+        </div>
+
+        <div className="flex gap-2 mt-1 flex-wrap">
+          {Object.entries(periods as Record<string, boolean>)
+            .filter(([_, checked]) => checked)
+            .map(([period]) => (
+              <span
+                key={period}
+                className="bg-green-200 text-green-800 px-3 py-1 rounded-full text-sm"
+              >
+                {period}
+              </span>
+            ))}
+        </div>
+
+      </div>
+    ))}
+  </div>
+)}
+                </div>
+
+                {/* RIGHT BUTTONS */}
+                {confirmId !== req._id && (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setConfirmId(req._id)}
+                      className="bg-green-500 hover:bg-green-600 text-white px-4 py-1.5 rounded-md text-sm"
+                    >
+                      Accept
+                    </button>
+
+                    <button
+                      onClick={() => handleReject(req._id)}
+                      className="bg-red-500 hover:bg-red-600 text-white px-4 py-1.5 rounded-md text-sm"
+                    >
+                      Reject
+                    </button>
+                  </div>
+                  
+                )}
+              </div>
+
+             {/* FREE PERIOD UI */}
+{confirmId === req._id && (
+  <div className="mt-4 p-4 border rounded-xl bg-gray-50">
+
+    <h3 className="font-bold mb-4">
+      Select Free Periods
+    </h3>
+
+{["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"].map((day) => (
+  <div
+    key={day}
+    className="flex items-center justify-between border-b py-2"
+  >
+    <span className="font-medium">
+      {day}
+    </span>
+
+    <div className="flex gap-4">
+
+      {["P1","P2","P3","P4","P5","P6","P7","P8"].map((period) => (
+
+        <label
+          key={period}
+          className="flex items-center gap-2 text-sm"
+        >
+          <input
+            type="checkbox"
+            checked={Boolean(selectedPeriods?.[day]?.[period])}
+            onChange={() => handleCheckbox(day, period)}
+            className="w-4 h-4 cursor-pointer"
+          />
+
+          {period}
+        </label>
+
+      ))}
+
+    </div>
+  </div>
+))}
+
+    <div className="flex gap-3 mt-4">
+
+      <button
+        onClick={() => submitFreePeriods(req)}
+        className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg"
+      >
+        Submit
+      </button>
+
+      <button
+        onClick={() => setConfirmId(null)}
+        className="bg-gray-400 hover:bg-gray-500 text-white px-4 py-2 rounded-lg"
+      >
+        Cancel
+      </button>
+
+    </div>
+  </div>
+)}
+                            {/* ✅ ADD HERE */}
+              
+
+            </div>
+          ))
+        ) : (
+          <p className="text-center text-gray-500 mt-4">
+            No pending requests available
+          </p>
+        )}
+
+        {approvedRequests?.length > 0 && (
+          <div className="mt-6">
+            <h2 className="text-md font-bold text-gray-800 mb-3">
+              Approved Responses
+            </h2>
+
+            {approvedRequests.map((req: any) => (
+              <div
+                key={req._id}
+                className="bg-green-50 rounded-xl shadow-sm border border-green-200 p-5 mb-4"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <CheckCircle className="w-4 h-4 text-green-700" />
+                      <h3 className="font-bold text-green-800">
+                        Request Approved
+                      </h3>
+                    </div>
+
+                    <p className="text-sm text-gray-700">
+                      <span className="font-semibold">From:</span>{" "}
+                      {req.fromHod || "Unknown"}
+                    </p>
+                    <p className="text-sm text-gray-700">
+                      <span className="font-semibold">Year:</span> {req.year}
+                    </p>
+                    {req.approvedAt && (
+                      <p className="text-sm text-gray-600">
+                        <span className="font-semibold">Approved:</span>{" "}
+                        {new Date(req.approvedAt).toLocaleString()}
+                      </p>
+                    )}
+                  </div>
+
+                  <Badge className="bg-green-100 text-green-700">
+                    {req.status}
+                  </Badge>
+                </div>
+
+                <div className="mt-4 bg-white border border-green-100 rounded-lg p-4">
+                  <h4 className="font-bold mb-3 text-green-700">
+                    Available Free Periods
+                  </h4>
+                  {renderFreePeriods(req.freePeriods)}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    )}
+  </div>
 
           {/* Faculty Workload & Attendance Submission */}
           <div className="grid md:grid-cols-2 gap-6">
