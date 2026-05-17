@@ -384,17 +384,9 @@ export default function HODReports() {
     }
   };
 
-  const isGeneratableReportType = (type: string): type is 'attendance' | 'performance' | 'fee' | 'academic' =>
-    ['attendance', 'academic', 'performance', 'fee'].includes(type);
-
   const handleGenerateReport = async () => {
     try {
-      if (typeFilter !== 'all' && !isGeneratableReportType(typeFilter)) {
-        toast.error('Selected report type cannot be generated');
-        return;
-      }
-
-      const reportType = typeFilter === 'all' ? 'attendance' : typeFilter;
+      const reportType = typeFilter === 'all' ? 'attendance' : typeFilter as (typeof reportTypes)[number]['value'];
       const selectedYear = classFilter === 'all' ? undefined : Number(classFilter.replace('Year ', ''));
       setGenerating(true);
       await generateReport({ type: reportType, year: selectedYear });
