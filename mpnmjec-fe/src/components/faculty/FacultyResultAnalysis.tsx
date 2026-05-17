@@ -101,7 +101,7 @@ export default function FacultyResultAnalysis() {
   const [selectedCourse, setSelectedCourse] = useState('');
 const [selectedExamType, setSelectedExamType] = useState('');
 const [selectedYear, setSelectedYear] = useState('');
-const [loadedResults, setFilteredResults] = useState<any[]>([]);
+const [, setFilteredResults] = useState<any[]>([]);
 
 const [loadedStudents, setLoadedStudents] = useState<StudentResult[]>([]);
 
