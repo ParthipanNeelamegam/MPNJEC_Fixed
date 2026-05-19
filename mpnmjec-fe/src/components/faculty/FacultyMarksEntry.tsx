@@ -79,7 +79,7 @@ function computeAnalysis(students: StudentMark[], editableMarks: EditableMarks) 
     const hasAny = int1 || int2 || model || final;
     if (!hasAny) return;
     // Same formula as backend pre-save hook
-    const computed = Math.round((int1 + int2) / 2 + model / 2 + final / 2);
+    const computed = Math.round((int1 + int2) / 2 * (25 / 60) + model / 2 + final / 2);
     totals.push(computed);
   });
 
@@ -190,8 +190,12 @@ export default function FacultyMarksEntry() {
     }
   };
 
+  const MARK_MAX: Record<string, number> = { internal1: 60, internal2: 60, modelExam: 50, finalExam: 100 };
+
   const handleMarkChange = (studentId: string, field: string, value: string) => {
     if (value && !/^\d*$/.test(value)) return;
+    const max = MARK_MAX[field];
+    if (value && max !== undefined && parseInt(value) > max) return;
     setEditableMarks(prev => ({
       ...prev,
       [studentId]: { ...prev[studentId], [field]: value, modified: true },
@@ -382,22 +386,57 @@ export default function FacultyMarksEntry() {
                 </Button>
                 <Button size="sm" variant="outline" onClick={async () => {
                   try {
-                    // dynamic import to avoid SSR/type issues
                     const { default: jsPDF } = await import('jspdf');
                     await import('jspdf-autotable');
                     const doc: any = new jsPDF();
-                    const head = [['Roll No','Name','Internal1','Internal2','Model','Final','Total','Status']];
+
+                    const courseName = selectedCourseData ? `${selectedCourseData.code} - ${selectedCourseData.name}` : 'Marks';
+                    doc.setFontSize(13);
+                    doc.setFont('helvetica', 'bold');
+                    doc.text('MARK ENTRY REPORT', 105, 12, { align: 'center' });
+                    doc.setFontSize(10);
+                    doc.setFont('helvetica', 'normal');
+                    doc.text(`Course: ${courseName}`, 14, 20);
+                    doc.text(`Semester: ${selectedSemester}  |  Year: ${selectedYear !== 'all' ? selectedYear : 'All'}  |  Section: ${selectedSection !== 'all' ? selectedSection : 'All'}`, 14, 26);
+
+                    const head = [['Roll No','Name','Internal 1\n(60)','Internal 2\n(60)','Model\n(50)','Final\n(100)','Total\n(100)','Status']];
                     const body = students.map(s => {
                       const m = editableMarks[s.id];
                       const int1 = m?.internal1 ?? (s.marks?.internal1 ?? '');
                       const int2 = m?.internal2 ?? (s.marks?.internal2 ?? '');
                       const model = m?.modelExam ?? (s.marks?.modelExam ?? '');
                       const final = m?.finalExam ?? (s.marks?.finalExam ?? '');
-                      const total = (int1 || int2 || model || final) ? Math.round(((Number(int1) || 0) + (Number(int2) || 0)) / 2 + (Number(model) || 0) / 2 + (Number(final) || 0) / 2) : '-';
+                      const hasAny = int1 || int2 || model || final;
+                      const total = hasAny ? Math.round((Number(int1)||0 + Number(int2)||0) / 2 * (25/60) + (Number(model)||0) / 2 + (Number(final)||0) / 2) : '-';
                       const status = s.marks?.verifiedByHOD ? 'Verified' : (m?.modified ? 'Modified' : (s.marks ? 'Pending' : 'Absent'));
-                      return [s.rollNumber, s.name, int1?.toString() ?? '-', int2?.toString() ?? '-', model?.toString() ?? '-', final?.toString() ?? '-', total.toString(), status];
+                      return [s.rollNumber, s.name, int1?.toString() || '-', int2?.toString() || '-', model?.toString() || '-', final?.toString() || '-', total.toString(), status];
                     });
-                    (doc as any).autoTable({ head, body, startY: 10 });
+                    (doc as any).autoTable({ head, body, startY: 32, styles: { fontSize: 8 }, headStyles: { fillColor: [59, 130, 246] } });
+
+                    // MARK SUMMARY section
+                    const finalY = (doc as any).lastAutoTable.finalY + 10;
+                    const snap = analysis;
+                    if (snap) {
+                      doc.setFontSize(11);
+                      doc.setFont('helvetica', 'bold');
+                      doc.text('MARK SUMMARY', 14, finalY);
+                      doc.setFontSize(9);
+                      doc.setFont('helvetica', 'normal');
+                      const summaryRows = [
+                        ['No. of Students Present (marks entered)', snap.presentCount.toString()],
+                        ['No. of Students Absent (no marks)', snap.absentCount.toString()],
+                        ['No. of Students Passed', `${snap.passCount}  (${snap.overallPassPct}%)`],
+                        ['No. of Students Failed', `${snap.failCount}  (${snap.presentCount > 0 ? Math.round((snap.failCount / snap.presentCount) * 100) : 0}%)`],
+                      ];
+                      (doc as any).autoTable({
+                        body: summaryRows,
+                        startY: finalY + 4,
+                        styles: { fontSize: 9 },
+                        columnStyles: { 0: { cellWidth: 130 }, 1: { halign: 'center' } },
+                        theme: 'grid',
+                      });
+                    }
+
                     doc.save(`${selectedCourseData?.code || 'marks'}-marks.pdf`);
                   } catch (err) {
                     console.error('Export PDF failed', err);
@@ -414,7 +453,7 @@ export default function FacultyMarksEntry() {
                       const int2 = m?.internal2 ?? (s.marks?.internal2 ?? '');
                       const model = m?.modelExam ?? (s.marks?.modelExam ?? '');
                       const final = m?.finalExam ?? (s.marks?.finalExam ?? '');
-                      const total = (int1 || int2 || model || final) ? Math.round(((Number(int1) || 0) + (Number(int2) || 0)) / 2 + (Number(model) || 0) / 2 + (Number(final) || 0) / 2) : '-';
+                      const total = (int1 || int2 || model || final) ? Math.round(((Number(int1)||0) + (Number(int2)||0)) / 2 * (25/60) + (Number(model)||0) / 2 + (Number(final)||0) / 2) : '-';
                       const status = s.marks?.verifiedByHOD ? 'Verified' : (m?.modified ? 'Modified' : (s.marks ? 'Pending' : 'Absent'));
                       aoa.push([s.rollNumber, s.name, int1?.toString() ?? '-', int2?.toString() ?? '-', model?.toString() ?? '-', final?.toString() ?? '-', total.toString(), status]);
                     });
@@ -450,8 +489,8 @@ export default function FacultyMarksEntry() {
                       <tr>
                         <th className="text-left text-white font-semibold p-4">Roll No</th>
                         <th className="text-left text-white font-semibold p-4">Name</th>
-                        <th className="text-center text-white font-semibold p-4">Internal 1 (25)</th>
-                        <th className="text-center text-white font-semibold p-4">Internal 2 (25)</th>
+                        <th className="text-center text-white font-semibold p-4">Internal 1 (60)</th>
+                        <th className="text-center text-white font-semibold p-4">Internal 2 (60)</th>
                         <th className="text-center text-white font-semibold p-4">Model (50)</th>
                         <th className="text-center text-white font-semibold p-4">Final (100)</th>
                         <th className="text-center text-white font-semibold p-4">Total</th>
@@ -467,7 +506,7 @@ export default function FacultyMarksEntry() {
                         const model = parseInt(marks?.modelExam || '0') || 0;
                         const final = parseInt(marks?.finalExam || '0') || 0;
                         const hasAnyMark = int1 || int2 || model || final;
-                        const total = Math.round((int1 + int2) / 2 + model / 2 + final / 2);
+                        const total = Math.round((int1 + int2) / 2 * (25 / 60) + model / 2 + final / 2);
 
                         return (
                           <tr

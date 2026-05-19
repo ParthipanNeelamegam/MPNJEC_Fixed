@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   Home, FileCheck, TrendingUp, Building, Award, CalendarDays,
-  BarChart3, Loader2, Filter
+  BarChart3, Loader2, Filter, Medal
 } from 'lucide-react';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
@@ -30,6 +30,7 @@ export default function PrincipalResultAnalysis() {
   const [loading, setLoading] = useState(false);
 
   const [selectedDepartment, setSelectedDepartment] = useState<string>('');
+  const [selectedYear, setSelectedYear] = useState<string>('');
   const [selectedSemester, setSelectedSemester] = useState<string>('1');
 
   const [overview, setOverview] = useState<OverviewAnalysis | null>(null);
@@ -47,6 +48,9 @@ export default function PrincipalResultAnalysis() {
       const params: any = { semester: parseInt(selectedSemester) };
       if (selectedDepartment && selectedDepartment !== 'all') {
         params.department = selectedDepartment;
+      }
+      if (selectedYear && selectedYear !== 'all') {
+        params.year = parseInt(selectedYear);
       }
 
       const res = await getOverviewAnalysis(params);
@@ -76,7 +80,7 @@ export default function PrincipalResultAnalysis() {
               <Filter className="w-4 h-4 text-gray-500" />
               <h3 className="font-semibold text-gray-700 text-sm">Filters</h3>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>
                 <Label className="text-sm font-medium text-gray-700">Department</Label>
                 <Select value={selectedDepartment} onValueChange={(v) => { setSelectedDepartment(v); setOverview(null); }}>
@@ -93,6 +97,21 @@ export default function PrincipalResultAnalysis() {
                     <SelectItem value="it">IT</SelectItem>
                     <SelectItem value="aids">AIDS</SelectItem>
                     <SelectItem value="csbs">CSBS</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-sm font-medium text-gray-700">Year</Label>
+                <Select value={selectedYear} onValueChange={(v) => { setSelectedYear(v); setOverview(null); }}>
+                  <SelectTrigger className="mt-1.5">
+                    <SelectValue placeholder="All Years" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Years</SelectItem>
+                    <SelectItem value="1">1st Year</SelectItem>
+                    <SelectItem value="2">2nd Year</SelectItem>
+                    <SelectItem value="3">3rd Year</SelectItem>
+                    <SelectItem value="4">4th Year</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -132,7 +151,7 @@ export default function PrincipalResultAnalysis() {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <Card className="p-4 text-center bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200">
                   <p className="text-3xl font-bold text-blue-700">{overview.summary.totalStudents}</p>
-                  <p className="text-sm text-blue-600">Total Students</p>
+                  <p className="text-sm text-blue-600">Total Appeared</p>
                 </Card>
                 <Card className="p-4 text-center bg-gradient-to-br from-green-50 to-emerald-50 border-green-200">
                   <p className="text-3xl font-bold text-green-700">{overview.summary.totalPassed}</p>
@@ -227,6 +246,50 @@ export default function PrincipalResultAnalysis() {
                   </div>
                 </Card>
               )}
+              {/* Top 3 Rank Holders */}
+              {(() => {
+                const allToppers: { rank: number; name: string; rollNumber: string; totalMarks: number; average: number; classLabel?: string }[] = [];
+                (overview.classes || []).forEach(cls => {
+                  (cls.toppers || []).forEach((t, i) => {
+                    allToppers.push({ ...t, rank: i + 1, classLabel: cls.section ? `Year ${cls.year} (${cls.section})` : `Year ${cls.year}` });
+                  });
+                });
+                const top3 = allToppers.sort((a, b) => b.totalMarks - a.totalMarks).slice(0, 3);
+                if (top3.length === 0) return null;
+                const medalColors = ['from-yellow-400 to-amber-500', 'from-gray-300 to-gray-400', 'from-amber-600 to-orange-700'];
+                return (
+                  <Card className="overflow-hidden bg-white/80 border-0 shadow-lg">
+                    <div className="p-4 border-b bg-gradient-to-r from-amber-500 to-orange-500">
+                      <div className="flex items-center gap-2">
+                        <Medal className="w-5 h-5 text-white" />
+                        <h3 className="font-bold text-white">Top 3 Rank Holders</h3>
+                      </div>
+                    </div>
+                    <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {top3.map((topper, idx) => (
+                        <div key={idx} className="rounded-xl border p-4 text-center">
+                          <div className={`w-12 h-12 rounded-full bg-gradient-to-br ${medalColors[idx]} flex items-center justify-center mx-auto mb-3`}>
+                            <span className="text-white font-bold text-lg">#{idx + 1}</span>
+                          </div>
+                          <p className="font-bold text-gray-900 text-sm">{topper.name}</p>
+                          <p className="text-xs text-gray-500 mb-2">{topper.rollNumber}</p>
+                          {topper.classLabel && <Badge className="bg-blue-100 text-blue-700 text-xs mb-2">{topper.classLabel}</Badge>}
+                          <div className="grid grid-cols-2 gap-2 mt-2">
+                            <div className="bg-gray-50 rounded p-2">
+                              <p className="text-sm font-bold text-gray-900">{topper.totalMarks}</p>
+                              <p className="text-xs text-gray-500">Total Marks</p>
+                            </div>
+                            <div className="bg-gray-50 rounded p-2">
+                              <p className="text-sm font-bold text-gray-900">{topper.average}%</p>
+                              <p className="text-xs text-gray-500">Average</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+                );
+              })()}
             </div>
           ) : !loading ? (
             <Card className="p-12 text-center bg-white/80 backdrop-blur-sm border-0 shadow-lg">

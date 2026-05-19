@@ -21,17 +21,17 @@ const marksSchema = new mongoose.Schema({
   academicYear: {
     type: String, // e.g., "2025-2026"
   },
-  // Internal marks
+  // Internal marks (out of 60 each, normalized to 25 in total formula)
   internal1: {
     type: Number,
     min: 0,
-    max: 25,
+    max: 60,
     default: 0,
   },
   internal2: {
     type: Number,
     min: 0,
-    max: 25,
+    max: 60,
     default: 0,
   },
   // Model exam
@@ -129,12 +129,15 @@ function calculateGrade(total) {
 }
 
 // Pre-save hook to calculate total and grade
+// Formula: internals (out of 60) normalized to 25-point contribution,
+//          model (out of 50) normalized to 25, final (out of 100) to 50 → total out of 100
 marksSchema.pre("save", async function() {
   const internalAvg = ((this.internal1 || 0) + (this.internal2 || 0)) / 2;
+  const internalNorm = internalAvg * (25 / 60);
   const modelNorm = (this.modelExam || 0) / 2;
   const finalNorm = (this.finalExam || 0) / 2;
 
-  this.total = Math.round(internalAvg + modelNorm + finalNorm);
+  this.total = Math.round(internalNorm + modelNorm + finalNorm);
   this.grade = calculateGrade(this.total);
   this.isPassed = this.finalExam >= 50;
 });
