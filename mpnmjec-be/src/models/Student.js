@@ -80,4 +80,4 @@ const studentSchema = new mongoose.Schema({
   },
 }, { timestamps: true });
 
-export default mongoose.models.Student || mongoose.model("Students", studentSchema);
+export default mongoose.models.Student || mongoose.model("Student", studentSchema);

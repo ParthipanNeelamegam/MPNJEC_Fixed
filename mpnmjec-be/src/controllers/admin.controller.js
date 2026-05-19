@@ -1599,8 +1599,11 @@ export const createFeeRecord = async (req, res) => {
 
         const existingFee = await Fee.findOne({ studentId: student._id, academicYear, semester });
         if (existingFee) {
-          existingFee.feeStructure = studentStructure;
-          existingFee.totalAmount = Number(studentTotal);
+          // Accumulate: add new fee items to existing structure and add to total
+          const existingCategories = new Set((existingFee.feeStructure || []).map(i => i.category));
+          const newItems = studentStructure.filter(i => !existingCategories.has(i.category));
+          existingFee.feeStructure = [...(existingFee.feeStructure || []), ...newItems];
+          existingFee.totalAmount = Number(existingFee.totalAmount) + newItems.reduce((s, i) => s + Number(i.amount || 0), 0);
           existingFee.dueDate = new Date(dueDate);
           existingFee.finePerDay = Number(finePerDay || 0);
           await existingFee.save();
@@ -1632,25 +1635,42 @@ export const createFeeRecord = async (req, res) => {
       return res.status(201).json({ message: "Global fee updated successfully", count: results.length, fees: results });
     }
 
+    // Single student fee update
     const student = await Student.findById(studentId);
     if (!student) {
       return res.status(404).json({ error: "Student not found" });
     }
 
-    // Check if fee record already exists
+    // Filter hostel fees for day scholars
+    let singleStructure = normalizedStructure;
+    let singleTotal = Number(totalAmount);
+    if (baseHasHostel && student.studentType !== 'hosteller') {
+      singleStructure = normalizedStructure.filter(i => i.category !== 'hostel');
+      singleTotal = singleStructure.reduce((s, i) => s + Number(i.amount || 0), 0);
+      if (singleStructure.length === 0) {
+        return res.status(400).json({ error: "Hostel fees cannot be assigned to Day Scholar students." });
+      }
+    }
+
     const existingFee = await Fee.findOne({ studentId, academicYear, semester });
     if (existingFee) {
-      return res.status(400).json({ 
-        error: "Fee record already exists for this student, academic year, and semester" 
-      });
+      // Accumulate pending fees
+      const existingCategories = new Set((existingFee.feeStructure || []).map(i => i.category));
+      const newItems = singleStructure.filter(i => !existingCategories.has(i.category));
+      existingFee.feeStructure = [...(existingFee.feeStructure || []), ...newItems];
+      existingFee.totalAmount = Number(existingFee.totalAmount) + newItems.reduce((s, i) => s + Number(i.amount || 0), 0);
+      existingFee.dueDate = new Date(dueDate);
+      existingFee.finePerDay = Number(finePerDay || 0);
+      await existingFee.save();
+      return res.status(200).json({ message: "Fee record updated successfully (accumulated)", fee: existingFee });
     }
 
     const fee = await Fee.create({
       studentId,
       academicYear,
       semester,
-      feeStructure: normalizedStructure,
-      totalAmount: Number(totalAmount),
+      feeStructure: singleStructure,
+      totalAmount: singleTotal,
       dueDate: new Date(dueDate),
       finePerDay: Number(finePerDay || 0),
     });

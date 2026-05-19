@@ -96,7 +96,7 @@ export default function AddStudentDialog({ trigger, onSuccess }: AddStudentDialo
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!formData.name || !formData.email || !formData.rollNumber || !formData.department || !formData.year) {
+    if (!formData.name || !formData.email || !formData.rollNumber || !formData.department || !formData.year || !formData.studentType) {
       toast.error('Please fill in all required fields');
       return;
     }
@@ -382,10 +382,10 @@ export default function AddStudentDialog({ trigger, onSuccess }: AddStudentDialo
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Student Type</Label>
-                  <Select value={formData.studentType} onValueChange={(v) => handleSelectChange('studentType', v)}>
+                  <Label>Hosteller / Day Scholar <span className="text-red-500">*</span></Label>
+                  <Select value={formData.studentType} onValueChange={(v) => handleSelectChange('studentType', v)} required>
                     <SelectTrigger>
-                      <SelectValue placeholder="Select" />
+                      <SelectValue placeholder="Select accommodation" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="day_scholar">Day Scholar</SelectItem>

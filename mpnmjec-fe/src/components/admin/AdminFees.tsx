@@ -546,21 +546,23 @@ export default function AdminFees() {
                 </div>
               </div>
             )}
-            <div>
-              <Label>Student <span className="text-red-500">*</span></Label>
-              <Select value={addFeeData.studentId} onValueChange={(v) => setAddFeeData({ ...addFeeData, studentId: v })}>
-                <SelectTrigger className="mt-1.5">
-                  <SelectValue placeholder="Select student" />
-                </SelectTrigger>
-                <SelectContent>
-                  {allStudents.map((s: any) => (
-                    <SelectItem key={s.id || s._id} value={s.id || s._id}>
-                      {s.name} — {s.rollNumber}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {addFeeData.scope === 'student' && (
+              <div>
+                <Label>Student <span className="text-red-500">*</span></Label>
+                <Select value={addFeeData.studentId} onValueChange={(v) => setAddFeeData({ ...addFeeData, studentId: v })}>
+                  <SelectTrigger className="mt-1.5">
+                    <SelectValue placeholder="Select student" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {allStudents.map((s: any) => (
+                      <SelectItem key={s.id || s._id} value={s.id || s._id}>
+                        {s.name} — {s.rollNumber} {s.studentType === 'hosteller' ? '(Hosteller)' : '(Day Scholar)'}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Academic Year</Label>
