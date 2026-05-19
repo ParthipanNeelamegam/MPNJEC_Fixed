@@ -24,7 +24,7 @@ export const getAdvisorStudents = async (filters?: StudentFilters) => {
   if (filters?.limit) params.append('limit', filters.limit.toString());
   if (filters?.search) params.append('search', filters.search);
   
-  return axiosInstance.get(`a/apii/advisor/students?${params.toString()}`);
+  return axiosInstance.get(`/api/advisor/students?${params.toString()}`);
 };
 
 export const getStudentDetails = async (studentId: string) => {
