@@ -120,7 +120,7 @@ export default function StudentReceipt() {
               if (!id) return;
               try {
                 const res = await downloadReceiptPdf(id);
-                const blob = new Blob([res.data], { type: res.headers?.['content-type'] || 'application/pdf' });
+                const blob = new Blob([res.data], { type: (res.headers?.['content-type'] as string) || 'application/pdf' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;

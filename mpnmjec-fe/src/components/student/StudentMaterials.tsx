@@ -4,7 +4,7 @@ import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import DesktopSidebar from '../shared/DesktopSidebar';
 import MobileNav from '../shared/MobileNav';
-import { getStudentMaterials, downloadMaterial } from '../../services/studentModuleService';
+import { getStudentMaterials } from '../../services/studentModuleService';
 import { toast } from 'sonner';
 
 interface Material {
