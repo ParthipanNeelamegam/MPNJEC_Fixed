@@ -65,7 +65,7 @@ export const getStudentDashboardSummary = async (req, res) => {
     }).select("dueDate fineAmount status");
     const today = new Date();
     const libraryFine = activeLibraryTransactions.reduce((sum, transaction) => {
-      if (!transaction.dueDate || today <= transaction.dueDate) return sum + (transaction.fineAmount || 0);
+      if (!transaction.dueDate || today <= transaction.dueDate) return sum;
       const daysOverdue = Math.ceil((today - transaction.dueDate) / (1000 * 60 * 60 * 24));
       return sum + Math.max(transaction.fineAmount || 0, daysOverdue * 5);
     }, 0);
